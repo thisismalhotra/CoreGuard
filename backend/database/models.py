@@ -1,0 +1,179 @@
+"""
+SQLAlchemy models for Core-Guard MVP.
+
+Ground Truth: FL-001 Flashlight dataset.
+All parts, BOMs, suppliers, and orders are modeled here.
+Foreign keys enforce referential integrity between Parts <-> Suppliers.
+"""
+
+from datetime import datetime, timezone
+from sqlalchemy import (
+    Column, Integer, String, Float, DateTime, ForeignKey, Text, Enum as SAEnum
+)
+from sqlalchemy.orm import relationship, DeclarativeBase
+import enum
+
+
+class Base(DeclarativeBase):
+    pass
+
+
+# --- Enums ---
+
+class PartCategory(str, enum.Enum):
+    FINISHED_GOOD = "Finished Good"
+    COMMON_CORE = "Common Core"
+    ACCESSORY = "Accessory"
+
+
+class OrderStatus(str, enum.Enum):
+    DRAFT = "DRAFT"
+    APPROVED = "APPROVED"
+    PENDING_APPROVAL = "PENDING_APPROVAL"  # Triggered when cost > $5,000 (Constitution)
+    SENT = "SENT"
+    CANCELLED = "CANCELLED"
+
+
+class InspectionResult(str, enum.Enum):
+    PASS = "PASS"
+    FAIL = "FAIL"
+    PENDING = "PENDING"
+
+
+# --- Models ---
+
+class Supplier(Base):
+    __tablename__ = "suppliers"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    name = Column(String(100), nullable=False, unique=True)
+    contact_email = Column(String(200))
+    lead_time_days = Column(Integer, nullable=False, default=7)
+    reliability_score = Column(Float, default=0.95)  # 0.0 - 1.0
+    is_active = Column(Integer, default=1)  # Simulates supplier going offline (Supply Shock)
+
+    parts = relationship("Part", back_populates="supplier")
+
+    def __repr__(self) -> str:
+        return f"<Supplier {self.name}>"
+
+
+class Part(Base):
+    __tablename__ = "parts"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    part_id = Column(String(20), nullable=False, unique=True)  # e.g., CH-101
+    description = Column(String(200), nullable=False)
+    category = Column(SAEnum(PartCategory), nullable=False)
+    unit_cost = Column(Float, nullable=False, default=0.0)
+    supplier_id = Column(Integer, ForeignKey("suppliers.id"), nullable=True)  # Nullable for Finished Goods
+
+    supplier = relationship("Supplier", back_populates="parts")
+    inventory = relationship("Inventory", back_populates="part", uselist=False)
+    bom_entries = relationship("BOMEntry", back_populates="component", foreign_keys="BOMEntry.component_id")
+
+    def __repr__(self) -> str:
+        return f"<Part {self.part_id}: {self.description}>"
+
+
+class Inventory(Base):
+    __tablename__ = "inventory"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    part_id = Column(Integer, ForeignKey("parts.id"), nullable=False, unique=True)
+    on_hand = Column(Integer, nullable=False, default=0)
+    safety_stock = Column(Integer, nullable=False, default=0)
+    reserved = Column(Integer, nullable=False, default=0)  # Allocated to existing orders
+    last_updated = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+    part = relationship("Part", back_populates="inventory")
+
+    @property
+    def available(self) -> int:
+        """Unreserved stock available for new orders."""
+        return self.on_hand - self.reserved
+
+    def __repr__(self) -> str:
+        return f"<Inventory {self.part.part_id if self.part else '?'}: {self.on_hand} on hand>"
+
+
+class BOMEntry(Base):
+    """Bill of Materials — links a Finished Good to its components."""
+    __tablename__ = "bom"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    parent_id = Column(Integer, ForeignKey("parts.id"), nullable=False)  # The Finished Good
+    component_id = Column(Integer, ForeignKey("parts.id"), nullable=False)  # The raw part
+    quantity_per = Column(Integer, nullable=False, default=1)  # How many components per parent
+
+    parent = relationship("Part", foreign_keys=[parent_id])
+    component = relationship("Part", foreign_keys=[component_id], back_populates="bom_entries")
+
+    def __repr__(self) -> str:
+        return f"<BOM {self.parent_id} -> {self.component_id} x{self.quantity_per}>"
+
+
+class PurchaseOrder(Base):
+    __tablename__ = "purchase_orders"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    po_number = Column(String(50), nullable=False, unique=True)
+    part_id = Column(Integer, ForeignKey("parts.id"), nullable=False)
+    supplier_id = Column(Integer, ForeignKey("suppliers.id"), nullable=False)
+    quantity = Column(Integer, nullable=False)
+    unit_cost = Column(Float, nullable=False)
+    total_cost = Column(Float, nullable=False)
+    status = Column(SAEnum(OrderStatus), nullable=False, default=OrderStatus.DRAFT)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    triggered_by = Column(String(50), default="SYSTEM")  # Which agent created this
+
+    part = relationship("Part")
+    supplier = relationship("Supplier")
+
+    def __repr__(self) -> str:
+        return f"<PO {self.po_number}: {self.quantity}x @ ${self.total_cost} [{self.status.value}]>"
+
+
+class DemandForecast(Base):
+    """Stores current and simulated demand for finished goods."""
+    __tablename__ = "demand_forecast"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    part_id = Column(Integer, ForeignKey("parts.id"), nullable=False)
+    forecast_qty = Column(Integer, nullable=False, default=0)
+    actual_qty = Column(Integer, nullable=False, default=0)  # Injected by simulation
+    period = Column(String(20), default="2025-Q1")
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+    part = relationship("Part")
+
+    def __repr__(self) -> str:
+        return f"<Demand {self.part_id}: forecast={self.forecast_qty}, actual={self.actual_qty}>"
+
+
+class QualityInspection(Base):
+    """Tracks shipment inspections at the Digital Dock."""
+    __tablename__ = "quality_inspections"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    part_id = Column(Integer, ForeignKey("parts.id"), nullable=False)
+    batch_size = Column(Integer, nullable=False)
+    result = Column(SAEnum(InspectionResult), default=InspectionResult.PENDING)
+    notes = Column(Text, default="")
+    inspected_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+    part = relationship("Part")
+
+    def __repr__(self) -> str:
+        return f"<Inspection {self.part_id}: {self.result.value}>"
+
+
+class AgentLog(Base):
+    """Persists the Glass Box logs so they survive page refreshes."""
+    __tablename__ = "agent_logs"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    timestamp = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    agent = Column(String(50), nullable=False)
+    message = Column(Text, nullable=False)
+    log_type = Column(String(20), nullable=False, default="info")  # info|warning|success|error

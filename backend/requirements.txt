@@ -1,0 +1,25 @@
+# Core API
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+
+# Real-time communication
+python-socketio==5.11.4
+
+# Database
+sqlalchemy==2.0.36
+aiosqlite==0.20.0
+
+# AI / LLM
+langchain==0.3.14
+langchain-openai==0.3.0
+openai==1.58.1
+
+# Vector DB
+pinecone-client==5.0.1
+
+# PDF generation
+fpdf2==2.8.2
+
+# Utilities
+python-dotenv==1.0.1
+pydantic==2.10.4

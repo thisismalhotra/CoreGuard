@@ -1,0 +1,25 @@
+# Dependencies
+node_modules/
+__pycache__/
+*.pyc
+
+# Environment
+.env
+*.env.local
+
+# Database
+*.db
+
+# Generated files
+backend/generated_pos/
+
+# OS
+.DS_Store
+
+# Next.js
+frontend/.next/
+frontend/out/
+
+# IDE
+.vscode/
+.idea/
