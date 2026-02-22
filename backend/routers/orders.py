@@ -3,12 +3,13 @@ Purchase Order REST endpoints.
 """
 
 import uuid
+from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 
 from database.connection import get_db
-from database.models import PurchaseOrder, Part, Supplier, OrderStatus
+from database.models import PurchaseOrder, Part, Supplier, OrderStatus, AgentLog
 from schemas import PurchaseOrderResponse, CreatePurchaseOrderRequest, UpdateOrderStatusRequest
 
 router = APIRouter(prefix="/api", tags=["orders"])
@@ -93,9 +94,10 @@ def create_order(
 
 
 @router.patch("/orders/{po_number}", response_model=PurchaseOrderResponse)
-def update_order_status(
+async def update_order_status(
     po_number: str,
     body: UpdateOrderStatusRequest,
+    request: Request,
     db: Session = Depends(get_db),
 ) -> dict:
     """
@@ -103,6 +105,9 @@ def update_order_status(
 
     Only allows transitions FROM PENDING_APPROVAL to APPROVED or CANCELLED.
     This is the human-in-the-loop step for the Financial Constitution (Rule C).
+
+    Glass Box: Emits a structured log via Socket.io so the dashboard
+    shows the approval/rejection in real-time.
     """
     po = db.query(PurchaseOrder).filter(PurchaseOrder.po_number == po_number).first()
     if not po:
@@ -117,7 +122,33 @@ def update_order_status(
 
     new_status = OrderStatus(body.status)
     po.status = new_status
+
+    # --- Glass Box: Persist log to DB ---
+    action_word = "APPROVED" if new_status == OrderStatus.APPROVED else "REJECTED"
+    log_type = "success" if new_status == OrderStatus.APPROVED else "warning"
+    log_msg = (
+        f"PO {po_number} {action_word} by human operator — "
+        f"{po.quantity}x {po.part.part_id} from {po.supplier.name} "
+        f"(${po.total_cost:,.2f})"
+    )
+    log_entry = AgentLog(
+        agent="Ghost-Writer",
+        message=log_msg,
+        log_type=log_type,
+    )
+    db.add(log_entry)
     db.commit()
+
+    # --- Glass Box: Emit log via Socket.io for real-time dashboard ---
+    sio = getattr(request.app.state, "sio", None)
+    if sio is not None:
+        log_payload = {
+            "timestamp": log_entry.timestamp.isoformat() if log_entry.timestamp else datetime.now(timezone.utc).isoformat(),
+            "agent": "Ghost-Writer",
+            "message": log_msg,
+            "type": log_type,
+        }
+        await sio.emit("agent_log", log_payload)
 
     return {
         "po_number": po.po_number,
