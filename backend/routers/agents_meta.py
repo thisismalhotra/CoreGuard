@@ -2,7 +2,7 @@
 Agent metadata & DB viewer REST endpoints.
 """
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
 from database.connection import get_db
@@ -10,7 +10,11 @@ from database.models import (
     Supplier, Part, Inventory, BOMEntry, PurchaseOrder,
     DemandForecast, QualityInspection, AgentLog,
 )
-from schemas import AgentMetadata
+from schemas import (
+    AgentMetadata, DBSupplierRow, DBPartRow, DBInventoryRow,
+    DBBomRow, DBOrderRow, DBDemandForecastRow, DBQualityInspectionRow,
+    DBAgentLogRow,
+)
 
 router = APIRouter(prefix="/api", tags=["agents"])
 
@@ -130,10 +134,14 @@ def get_agents() -> list[dict]:
 
 # --- DB Viewer ---
 
-@router.get("/db/suppliers")
-def db_suppliers(db: Session = Depends(get_db)) -> list[dict]:
+@router.get("/db/suppliers", response_model=list[DBSupplierRow])
+def db_suppliers(
+    db: Session = Depends(get_db),
+    limit: int = Query(default=100, ge=1, le=1000),
+    offset: int = Query(default=0, ge=0),
+) -> list[dict]:
     """Raw suppliers table dump."""
-    rows = db.query(Supplier).order_by(Supplier.id).all()
+    rows = db.query(Supplier).order_by(Supplier.id).offset(offset).limit(limit).all()
     return [
         {"id": s.id, "name": s.name, "contact_email": s.contact_email,
          "lead_time_days": s.lead_time_days, "reliability_score": s.reliability_score,
@@ -142,10 +150,14 @@ def db_suppliers(db: Session = Depends(get_db)) -> list[dict]:
     ]
 
 
-@router.get("/db/parts")
-def db_parts(db: Session = Depends(get_db)) -> list[dict]:
+@router.get("/db/parts", response_model=list[DBPartRow])
+def db_parts(
+    db: Session = Depends(get_db),
+    limit: int = Query(default=100, ge=1, le=1000),
+    offset: int = Query(default=0, ge=0),
+) -> list[dict]:
     """Raw parts table dump."""
-    rows = db.query(Part).order_by(Part.id).all()
+    rows = db.query(Part).order_by(Part.id).offset(offset).limit(limit).all()
     return [
         {"id": p.id, "part_id": p.part_id, "description": p.description,
          "category": p.category.value, "unit_cost": p.unit_cost,
@@ -156,10 +168,14 @@ def db_parts(db: Session = Depends(get_db)) -> list[dict]:
     ]
 
 
-@router.get("/db/inventory")
-def db_inventory(db: Session = Depends(get_db)) -> list[dict]:
+@router.get("/db/inventory", response_model=list[DBInventoryRow])
+def db_inventory(
+    db: Session = Depends(get_db),
+    limit: int = Query(default=100, ge=1, le=1000),
+    offset: int = Query(default=0, ge=0),
+) -> list[dict]:
     """Raw inventory table dump."""
-    rows = db.query(Inventory).order_by(Inventory.id).all()
+    rows = db.query(Inventory).order_by(Inventory.id).offset(offset).limit(limit).all()
     return [
         {"id": inv.id, "part": inv.part.part_id if inv.part else None,
          "on_hand": inv.on_hand, "safety_stock": inv.safety_stock,
@@ -169,10 +185,14 @@ def db_inventory(db: Session = Depends(get_db)) -> list[dict]:
     ]
 
 
-@router.get("/db/bom")
-def db_bom(db: Session = Depends(get_db)) -> list[dict]:
+@router.get("/db/bom", response_model=list[DBBomRow])
+def db_bom(
+    db: Session = Depends(get_db),
+    limit: int = Query(default=100, ge=1, le=1000),
+    offset: int = Query(default=0, ge=0),
+) -> list[dict]:
     """Raw BOM table dump."""
-    rows = db.query(BOMEntry).order_by(BOMEntry.id).all()
+    rows = db.query(BOMEntry).order_by(BOMEntry.id).offset(offset).limit(limit).all()
     return [
         {"id": b.id,
          "parent": b.parent.part_id if b.parent else None,
@@ -182,10 +202,14 @@ def db_bom(db: Session = Depends(get_db)) -> list[dict]:
     ]
 
 
-@router.get("/db/orders")
-def db_orders(db: Session = Depends(get_db)) -> list[dict]:
+@router.get("/db/orders", response_model=list[DBOrderRow])
+def db_orders(
+    db: Session = Depends(get_db),
+    limit: int = Query(default=100, ge=1, le=1000),
+    offset: int = Query(default=0, ge=0),
+) -> list[dict]:
     """Raw purchase_orders table dump."""
-    rows = db.query(PurchaseOrder).order_by(PurchaseOrder.id).all()
+    rows = db.query(PurchaseOrder).order_by(PurchaseOrder.id).offset(offset).limit(limit).all()
     return [
         {"id": po.id, "po_number": po.po_number,
          "part": po.part.part_id if po.part else None,
@@ -198,10 +222,14 @@ def db_orders(db: Session = Depends(get_db)) -> list[dict]:
     ]
 
 
-@router.get("/db/demand_forecast")
-def db_demand_forecast(db: Session = Depends(get_db)) -> list[dict]:
+@router.get("/db/demand_forecast", response_model=list[DBDemandForecastRow])
+def db_demand_forecast(
+    db: Session = Depends(get_db),
+    limit: int = Query(default=100, ge=1, le=1000),
+    offset: int = Query(default=0, ge=0),
+) -> list[dict]:
     """Raw demand_forecast table dump."""
-    rows = db.query(DemandForecast).order_by(DemandForecast.id).all()
+    rows = db.query(DemandForecast).order_by(DemandForecast.id).offset(offset).limit(limit).all()
     return [
         {"id": d.id, "part": d.part.part_id if d.part else None,
          "forecast_qty": d.forecast_qty, "actual_qty": d.actual_qty,
@@ -211,10 +239,14 @@ def db_demand_forecast(db: Session = Depends(get_db)) -> list[dict]:
     ]
 
 
-@router.get("/db/quality_inspections")
-def db_quality_inspections(db: Session = Depends(get_db)) -> list[dict]:
+@router.get("/db/quality_inspections", response_model=list[DBQualityInspectionRow])
+def db_quality_inspections(
+    db: Session = Depends(get_db),
+    limit: int = Query(default=100, ge=1, le=1000),
+    offset: int = Query(default=0, ge=0),
+) -> list[dict]:
     """Raw quality_inspections table dump."""
-    rows = db.query(QualityInspection).order_by(QualityInspection.id).all()
+    rows = db.query(QualityInspection).order_by(QualityInspection.id).offset(offset).limit(limit).all()
     return [
         {"id": q.id, "part": q.part.part_id if q.part else None,
          "batch_size": q.batch_size, "result": q.result.value,
@@ -224,10 +256,14 @@ def db_quality_inspections(db: Session = Depends(get_db)) -> list[dict]:
     ]
 
 
-@router.get("/db/agent_logs")
-def db_agent_logs(db: Session = Depends(get_db)) -> list[dict]:
+@router.get("/db/agent_logs", response_model=list[DBAgentLogRow])
+def db_agent_logs(
+    db: Session = Depends(get_db),
+    limit: int = Query(default=200, ge=1, le=1000),
+    offset: int = Query(default=0, ge=0),
+) -> list[dict]:
     """Raw agent_logs table dump."""
-    rows = db.query(AgentLog).order_by(AgentLog.id.desc()).limit(200).all()
+    rows = db.query(AgentLog).order_by(AgentLog.id.desc()).offset(offset).limit(limit).all()
     return [
         {"id": log.id, "agent": log.agent, "message": log.message,
          "log_type": log.log_type,

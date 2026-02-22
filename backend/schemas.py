@@ -4,11 +4,11 @@ Pydantic request/response models for Core-Guard API.
 Provides type-safe validation for all REST endpoints. Replaces the raw
 dict[str, Any] returns with structured models for better documentation,
 validation, and client-side type generation.
-
-Note: Uses Optional[X] syntax for Python 3.9 compatibility.
 """
 
-from typing import Any, Dict, List, Optional
+from __future__ import annotations
+
+from typing import Any, Optional
 from pydantic import BaseModel, Field
 
 
@@ -147,12 +147,12 @@ class SpikeAuraResult(BaseModel):
 
 
 class SpikeMRPResult(BaseModel):
-    shortages: List[ShortageDetail]
-    actions: List[ActionDetail]
+    shortages: list[ShortageDetail]
+    actions: list[ActionDetail]
 
 
 class SpikeProcurementResult(BaseModel):
-    purchase_orders: List[PurchaseOrderSummary]
+    purchase_orders: list[PurchaseOrderSummary]
 
 
 class SpikeResponse(BaseModel):
@@ -163,22 +163,22 @@ class SpikeResponse(BaseModel):
     aura: SpikeAuraResult
     mrp: SpikeMRPResult
     procurement: SpikeProcurementResult
-    logs: List[GlassBoxLog]
+    logs: list[GlassBoxLog]
 
 
 class NoSpikeResponse(BaseModel):
     status: str = "no_spike"
-    aura: Dict[str, Any]
-    logs: List[GlassBoxLog]
+    aura: dict[str, Any]
+    logs: list[GlassBoxLog]
 
 
 class SupplyShockResponse(BaseModel):
     status: str
     scenario: str = "SUPPLY_SHOCK"
     supplier: str
-    affected_parts: List[str]
-    procurement: List[PurchaseOrderSummary]
-    logs: List[GlassBoxLog]
+    affected_parts: list[str]
+    procurement: list[PurchaseOrderSummary]
+    logs: list[GlassBoxLog]
 
 
 class QualityFailResponse(BaseModel):
@@ -187,33 +187,33 @@ class QualityFailResponse(BaseModel):
     part_id: str
     batch_size: int
     inspection_result: str
-    failed_checks: List[str]
-    procurement: List[PurchaseOrderSummary]
-    logs: List[GlassBoxLog]
+    failed_checks: list[str]
+    procurement: list[PurchaseOrderSummary]
+    logs: list[GlassBoxLog]
 
 
 class CascadeFailureResponse(BaseModel):
     status: str
     scenario: str = "CASCADE_FAILURE"
-    shortages: List[ShortageDetail]
-    procurement: List[PurchaseOrderSummary]
-    logs: List[GlassBoxLog]
+    shortages: list[ShortageDetail]
+    procurement: list[PurchaseOrderSummary]
+    logs: list[GlassBoxLog]
 
 
 class ConstitutionBreachResponse(BaseModel):
     status: str
     scenario: str = "CONSTITUTION_BREACH"
-    blocked_pos: List[PurchaseOrderSummary]
-    approved_pos: List[PurchaseOrderSummary]
-    logs: List[GlassBoxLog]
+    blocked_pos: list[PurchaseOrderSummary]
+    approved_pos: list[PurchaseOrderSummary]
+    logs: list[GlassBoxLog]
 
 
 class FullBlackoutResponse(BaseModel):
     status: str
     scenario: str = "FULL_BLACKOUT"
     suppliers_offline: int
-    unresolved_shortages: List[ShortageDetail]
-    logs: List[GlassBoxLog]
+    unresolved_shortages: list[ShortageDetail]
+    logs: list[GlassBoxLog]
 
 
 class ResetResponse(BaseModel):
@@ -315,11 +315,11 @@ class AgentMetadata(BaseModel):
     role: str
     description: str
     trigger: str
-    inputs: List[str]
-    outputs: List[str]
+    inputs: list[str]
+    outputs: list[str]
     downstream: Optional[str] = None
     constitution: Optional[str] = None
-    rules: List[str]
+    rules: list[str]
     color: str
     icon: str
     source_file: str

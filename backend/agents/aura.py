@@ -13,7 +13,8 @@ from datetime import datetime, timezone
 from typing import Any
 from sqlalchemy.orm import Session
 
-from database.models import Part, DemandForecast, AgentLog
+from database.models import Part, DemandForecast
+from agents.utils import create_agent_log
 
 AGENT_NAME = "Aura"
 SPIKE_THRESHOLD = 1.2  # Fire DEMAND_SPIKE when actual > forecast * threshold
@@ -21,15 +22,7 @@ SPIKE_THRESHOLD = 1.2  # Fire DEMAND_SPIKE when actual > forecast * threshold
 
 def _log(db: Session, message: str, log_type: str = "info") -> dict[str, str]:
     """Persist a Glass Box log entry and return it for Socket.io emission."""
-    entry = AgentLog(agent=AGENT_NAME, message=message, log_type=log_type)
-    db.add(entry)
-    db.flush()
-    return {
-        "timestamp": datetime.now(timezone.utc).isoformat(),
-        "agent": AGENT_NAME,
-        "message": message,
-        "type": log_type,
-    }
+    return create_agent_log(db, AGENT_NAME, message, log_type)
 
 
 def detect_demand_spike(

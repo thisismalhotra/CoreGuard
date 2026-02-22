@@ -46,7 +46,11 @@ export function KPIPanel({ kpis }: { kpis: KPIs | null }) {
               <div>
                 <p className="text-xs text-muted-foreground uppercase tracking-wider">{label}</p>
                 <p className={`text-2xl font-bold font-mono ${color}`}>
-                  {kpis ? format(kpis[key]) : "—"}
+                  {kpis ? (
+                    format(kpis[key])
+                  ) : (
+                    <span className="inline-block h-7 w-12 bg-muted animate-pulse rounded" />
+                  )}
                 </p>
               </div>
             </div>

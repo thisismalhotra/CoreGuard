@@ -15,7 +15,8 @@ from datetime import datetime, timezone
 from typing import Any
 from sqlalchemy.orm import Session
 
-from database.models import Part, AgentLog, QualityInspection, InspectionResult
+from database.models import Part, Supplier, QualityInspection, InspectionResult
+from agents.utils import create_agent_log
 
 AGENT_NAME = "Eagle-Eye"
 
@@ -29,15 +30,7 @@ CAD_SPECS = {
 
 def _log(db: Session, message: str, log_type: str = "info") -> dict[str, str]:
     """Persist a Glass Box log entry and return it for Socket.io emission."""
-    entry = AgentLog(agent=AGENT_NAME, message=message, log_type=log_type)
-    db.add(entry)
-    db.flush()
-    return {
-        "timestamp": datetime.now(timezone.utc).isoformat(),
-        "agent": AGENT_NAME,
-        "message": message,
-        "type": log_type,
-    }
+    return create_agent_log(db, AGENT_NAME, message, log_type)
 
 
 def inspect_batch(
@@ -149,6 +142,7 @@ def inspect_batch(
         inv = part.inventory
         if inv:
             inv.on_hand += batch_size
+            inv.last_updated = datetime.now(timezone.utc)
             logs.append(_log(db, f"Inventory updated: {part_id} on_hand increased by {batch_size} to {inv.on_hand}.", "success"))
     else:
         logs.append(_log(db, f"FAIL: {len(failed_checks)} spec violation(s) detected.", "error"))
@@ -158,8 +152,30 @@ def inspect_batch(
         # Quarantine: do not add to inventory, mark as reserved to flag the issue
         logs.append(_log(db, f"Quarantining entire batch of {batch_size}x {part_id}. Stock NOT added to inventory.", "warning"))
 
-        # Trigger emergency reorder
+        # Trigger emergency reorder — prefer an alternate supplier since this one sent defective parts
         logs.append(_log(db, f"Eagle-Eye escalating to Core-Guard: requesting emergency reorder of {batch_size}x {part_id}.", "warning"))
+
+        reorder_supplier_id = part.supplier_id
+        reorder_supplier_name = part.supplier.name if part.supplier else "Unknown"
+
+        # Query for a different active supplier with the best reliability
+        alternate = (
+            db.query(Supplier)
+            .filter(Supplier.id != part.supplier_id, Supplier.is_active == True)
+            .order_by(Supplier.reliability_score.desc())
+            .first()
+        )
+        if alternate:
+            logs.append(_log(
+                db,
+                f"Switching reorder from {reorder_supplier_name} (defective batch) to alternate: "
+                f"{alternate.name} (reliability: {alternate.reliability_score}).",
+                "info",
+            ))
+            reorder_supplier_id = alternate.id
+            reorder_supplier_name = alternate.name
+        else:
+            logs.append(_log(db, f"No alternate supplier available. Reordering from {reorder_supplier_name} despite quality failure.", "warning"))
 
         actions.append({
             "type": "BUY_ORDER",
@@ -167,8 +183,8 @@ def inspect_batch(
             "quantity": batch_size,
             "unit_cost": part.unit_cost,
             "total_cost": round(batch_size * part.unit_cost, 2),
-            "supplier_id": part.supplier_id,
-            "supplier_name": part.supplier.name if part.supplier else "Unknown",
+            "supplier_id": reorder_supplier_id,
+            "supplier_name": reorder_supplier_name,
             "triggered_by": AGENT_NAME,
         })
 

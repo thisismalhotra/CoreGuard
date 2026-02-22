@@ -9,7 +9,7 @@ import asyncio
 from datetime import datetime, timezone
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from database.connection import get_db, engine
@@ -21,6 +21,11 @@ from agents.dispatcher import triage_demand_spike
 from agents.core_guard import calculate_net_requirements
 from agents.ghost_writer import process_buy_orders
 from agents.eagle_eye import inspect_batch
+from schemas import (
+    SpikeResponse, SupplyShockResponse, QualityFailResponse,
+    CascadeFailureResponse, ConstitutionBreachResponse,
+    FullBlackoutResponse, ResetResponse,
+)
 
 router = APIRouter(prefix="/api/simulate", tags=["simulations"])
 
@@ -65,10 +70,10 @@ def _sys_log(db: Session, msg: str, log_type: str = "info", agent: str = "System
 # Scenario A: Demand Spike
 # ---------------------------------------------------------------------------
 
-@router.post("/spike")
+@router.post("/spike", response_model=SpikeResponse)
 async def simulate_demand_spike(
     sku: str = "FL-001-T",
-    multiplier: float = 3.0,
+    multiplier: float = Query(default=3.0, ge=1.0, le=100.0, description="Demand multiplier (1x–100x)"),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     """
@@ -143,7 +148,7 @@ async def simulate_demand_spike(
 # Scenario B: Supply Shock
 # ---------------------------------------------------------------------------
 
-@router.post("/supply-shock")
+@router.post("/supply-shock", response_model=SupplyShockResponse)
 async def simulate_supply_shock(
     supplier_name: str = "AluForge",
     db: Session = Depends(get_db),
@@ -158,7 +163,7 @@ async def simulate_supply_shock(
         raise HTTPException(status_code=404, detail=f"Supplier '{supplier_name}' not found")
 
     # Step 1: Disable the supplier
-    supplier.is_active = 0
+    supplier.is_active = False
     db.flush()
 
     log = _sys_log(db, f"SUPPLY SHOCK: {supplier_name} is now OFFLINE. Initiating emergency response.", "error")
@@ -182,11 +187,12 @@ async def simulate_supply_shock(
         all_logs.append(log)
         await emit_logs([log])
 
-        order_qty = inv.safety_stock
+        # Order the actual shortfall (safety stock deficit), not just safety_stock blindly
+        order_qty = max(inv.safety_stock - inv.available, inv.safety_stock)
 
         alternate = (
             db.query(Supplier)
-            .filter(Supplier.id != supplier.id, Supplier.is_active == 1)
+            .filter(Supplier.id != supplier.id, Supplier.is_active == True)
             .order_by(Supplier.reliability_score.desc())
             .first()
         )
@@ -262,10 +268,10 @@ async def simulate_supply_shock(
 # Scenario C: Quality Fail
 # ---------------------------------------------------------------------------
 
-@router.post("/quality-fail")
+@router.post("/quality-fail", response_model=QualityFailResponse)
 async def simulate_quality_fail(
     part_id: str = "CH-101",
-    batch_size: int = 150,
+    batch_size: int = Query(default=150, ge=1, le=10000, description="Batch size (1–10,000)"),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     """
@@ -303,7 +309,7 @@ async def simulate_quality_fail(
 # Scenario D: Cascade Failure
 # ---------------------------------------------------------------------------
 
-@router.post("/cascade-failure")
+@router.post("/cascade-failure", response_model=CascadeFailureResponse)
 async def simulate_cascade_failure(
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
@@ -315,7 +321,7 @@ async def simulate_cascade_failure(
     # Act 1: Knock out AluForge silently
     aluforge = db.query(Supplier).filter(Supplier.name == "AluForge").first()
     if aluforge:
-        aluforge.is_active = 0
+        aluforge.is_active = False
         db.flush()
 
     log = _sys_log(db, "CASCADE EVENT INITIATED: AluForge goes offline at the same moment a 500% demand spike hits FL-001-T.", "error")
@@ -354,7 +360,7 @@ async def simulate_cascade_failure(
         if part and part.supplier and not part.supplier.is_active:
             alternate = (
                 db.query(Supplier)
-                .filter(Supplier.id != part.supplier_id, Supplier.is_active == 1)
+                .filter(Supplier.id != part.supplier_id, Supplier.is_active == True)
                 .order_by(Supplier.reliability_score.desc())
                 .first()
             )
@@ -403,7 +409,7 @@ async def simulate_cascade_failure(
 # Scenario E: Constitution Breach
 # ---------------------------------------------------------------------------
 
-@router.post("/constitution-breach")
+@router.post("/constitution-breach", response_model=ConstitutionBreachResponse)
 async def simulate_constitution_breach(
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
@@ -480,7 +486,7 @@ async def simulate_constitution_breach(
 # Scenario F: Full Blackout
 # ---------------------------------------------------------------------------
 
-@router.post("/full-blackout")
+@router.post("/full-blackout", response_model=FullBlackoutResponse)
 async def simulate_full_blackout(
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
@@ -495,7 +501,7 @@ async def simulate_full_blackout(
 
     all_suppliers = db.query(Supplier).all()
     for s in all_suppliers:
-        s.is_active = 0
+        s.is_active = False
     db.flush()
 
     log = _sys_log(db, f"BLACKOUT: All {len(all_suppliers)} suppliers are now OFFLINE. No procurement path exists.", "error")
@@ -576,7 +582,7 @@ async def simulate_full_blackout(
 # Reset
 # ---------------------------------------------------------------------------
 
-@router.post("/reset")
+@router.post("/reset", response_model=ResetResponse)
 async def simulate_reset(
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:

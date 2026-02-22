@@ -38,6 +38,21 @@ export type KPIs = {
   total_orders: number;
 };
 
+export type Agent = {
+  name: string;
+  role: string;
+  description: string;
+  trigger: string;
+  inputs: string[];
+  outputs: string[];
+  downstream: string | null;
+  constitution: string | null;
+  rules: string[];
+  color: string;
+  icon: string;
+  source_file: string;
+};
+
 export type QualityInspection = {
   id: number;
   part: string | null;
@@ -85,6 +100,9 @@ export const api = {
     }),
   resetSimulation: () =>
     fetchJSON<Record<string, unknown>>("/api/simulate/reset", { method: "POST" }),
+  getAgents: () => fetchJSON<Agent[]>("/api/agents"),
+  getDBTable: (endpoint: string) =>
+    fetchJSON<Record<string, unknown>[]>(endpoint),
   getLogDelay: () =>
     fetchJSON<{ delay: number }>("/api/settings/log-delay"),
   setLogDelay: (delay: number) =>

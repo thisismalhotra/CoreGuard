@@ -23,13 +23,13 @@ See `PRD.md` and `ARCHITECTURE.md` for full product and system specifications.
 - Next.js 14+ (App Router)
 - Tailwind CSS + Shadcn UI (Lucide React Icons)
 - Socket.io Client (real-time agent logs)
-- Recharts (inventory levels, demand curves)
+- Recharts (planned for production — inventory levels, demand curves)
 
 **Backend**
 - Python 3.10+, FastAPI
 - SQLite (MVP) via SQLAlchemy ORM
-- Pinecone (Serverless Vector DB)
-- LangChain (AI orchestration)
+- Pinecone (planned for production — Serverless Vector DB)
+- LangChain (planned for production — AI orchestration)
 
 ## Commands
 
@@ -94,7 +94,7 @@ When building, follow this order:
 
 ## Coding Style
 
-**Python:** Use type hints (`def calculate(qty: int) -> dict:`). Handle exceptions gracefully — return mock data if OpenAI API fails during demo. Agents must be stateless classes that act on DB state.
+**Python:** Use type hints (`def calculate(qty: int) -> dict:`). Handle exceptions gracefully — return mock data if OpenAI API fails during demo. Agents are stateless functions that act on DB state.
 
 **React:** Functional components and hooks only. Keep state logic simple.
 

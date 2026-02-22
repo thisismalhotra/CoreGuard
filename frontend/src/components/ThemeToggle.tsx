@@ -42,16 +42,25 @@ export function ThemeToggle() {
                    hover:text-foreground hover:border-foreground/30
                    transition-colors cursor-pointer"
         onClick={() => setOpen(!open)}
+        aria-label={`Theme: ${current.label}`}
+        aria-expanded={open}
+        aria-haspopup="listbox"
       >
         <Icon className="h-3.5 w-3.5" />
         {current.label}
       </button>
       {open && (
-        <div className="absolute right-0 top-full mt-1 z-50 bg-card border border-border
-                        rounded-md shadow-lg py-1 min-w-[130px]">
+        <div
+          className="absolute right-0 top-full mt-1 z-50 bg-card border border-border
+                        rounded-md shadow-lg py-1 min-w-[130px]"
+          role="listbox"
+          aria-label="Theme options"
+        >
           {THEMES.map(({ value, label, icon: ThemeIcon }) => (
             <button
               key={value}
+              role="option"
+              aria-selected={theme === value}
               className={`w-full flex items-center gap-2 px-3 py-1.5 text-xs cursor-pointer
                          hover:bg-muted transition-colors
                          ${theme === value ? "text-foreground font-medium" : "text-muted-foreground"}`}

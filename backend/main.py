@@ -7,9 +7,12 @@ All endpoint logic lives in the `routers/` package.
 Run: uvicorn main:socket_app --reload --host 0.0.0.0 --port 8000
 """
 
+import logging
 from contextlib import asynccontextmanager
 
 import socketio
+
+logger = logging.getLogger(__name__)
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -62,12 +65,12 @@ socket_app = socketio.ASGIApp(sio, other_asgi_app=app)
 
 @sio.event
 async def connect(sid: str, environ: dict) -> None:
-    print(f"Client connected: {sid}")
+    logger.info("Client connected: %s", sid)
 
 
 @sio.event
 async def disconnect(sid: str) -> None:
-    print(f"Client disconnected: {sid}")
+    logger.info("Client disconnected: %s", sid)
 
 
 # --- ASGI entry point ---

@@ -17,8 +17,9 @@ from pathlib import Path
 from sqlalchemy.orm import Session
 
 from database.models import (
-    PurchaseOrder, Part, Supplier, AgentLog, OrderStatus,
+    PurchaseOrder, Part, Supplier, OrderStatus,
 )
+from agents.utils import create_agent_log
 
 AGENT_NAME = "Ghost-Writer"
 FINANCIAL_CONSTITUTION_MAX_SPEND = 5000.00  # Rule C — hard-coded, LLM cannot override
@@ -27,15 +28,7 @@ PO_OUTPUT_DIR = Path(__file__).resolve().parent.parent / "generated_pos"
 
 def _log(db: Session, message: str, log_type: str = "info") -> dict[str, str]:
     """Persist a Glass Box log entry and return it for Socket.io emission."""
-    entry = AgentLog(agent=AGENT_NAME, message=message, log_type=log_type)
-    db.add(entry)
-    db.flush()
-    return {
-        "timestamp": datetime.now(timezone.utc).isoformat(),
-        "agent": AGENT_NAME,
-        "message": message,
-        "type": log_type,
-    }
+    return create_agent_log(db, AGENT_NAME, message, log_type)
 
 
 def process_buy_orders(

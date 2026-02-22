@@ -8,7 +8,7 @@ Foreign keys enforce referential integrity between Parts <-> Suppliers.
 
 from datetime import datetime, timezone
 from sqlalchemy import (
-    Column, Integer, String, Float, DateTime, ForeignKey, Text, Enum as SAEnum
+    Boolean, Column, Integer, String, Float, DateTime, ForeignKey, Text, Enum as SAEnum
 )
 from sqlalchemy.orm import relationship, DeclarativeBase
 import enum
@@ -50,7 +50,7 @@ class Supplier(Base):
     contact_email = Column(String(200))
     lead_time_days = Column(Integer, nullable=False, default=7)
     reliability_score = Column(Float, default=0.95)  # 0.0 - 1.0
-    is_active = Column(Integer, default=1)  # Simulates supplier going offline (Supply Shock)
+    is_active = Column(Boolean, default=True)  # Simulates supplier going offline (Supply Shock)
 
     parts = relationship("Part", back_populates="supplier")
 
@@ -102,8 +102,8 @@ class Inventory(Base):
 
     @property
     def available(self) -> int:
-        """Unreserved stock available for new orders."""
-        return self.on_hand - self.reserved
+        """Unreserved stock available for new orders. Clamped to 0 minimum."""
+        return max(0, self.on_hand - self.reserved)
 
     def __repr__(self) -> str:
         return f"<Inventory {self.part.part_id if self.part else '?'}: {self.on_hand} on hand>"
@@ -154,7 +154,7 @@ class DemandForecast(Base):
     part_id = Column(Integer, ForeignKey("parts.id"), nullable=False)
     forecast_qty = Column(Integer, nullable=False, default=0)
     actual_qty = Column(Integer, nullable=False, default=0)  # Injected by simulation
-    period = Column(String(20), default="2025-Q1")
+    period = Column(String(20), default=lambda: f"{datetime.now(timezone.utc).year}-Q{(datetime.now(timezone.utc).month - 1) // 3 + 1}")
     updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     part = relationship("Part")

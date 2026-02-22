@@ -72,6 +72,7 @@ export function DigitalDock() {
   const [expandedPO, setExpandedPO] = useState<Set<string>>(new Set());
   const [updatingPO, setUpdatingPO] = useState<string | null>(null);
   const [poError, setPOError] = useState<string | null>(null);
+  const [fetchError, setFetchError] = useState<string | null>(null);
 
   const handleUpdateStatus = async (
     poNumber: string,
@@ -93,6 +94,7 @@ export function DigitalDock() {
 
   const fetchData = useCallback(async () => {
     setLoading(true);
+    setFetchError(null);
     try {
       const [inspData, orderData] = await Promise.all([
         api.getQualityInspections(),
@@ -100,8 +102,10 @@ export function DigitalDock() {
       ]);
       setInspections(inspData);
       setOrders(orderData);
-    } catch {
-      // Silently handle — data will show empty states
+    } catch (err) {
+      setFetchError(
+        `Failed to load data: ${err instanceof Error ? err.message : "Is the backend running?"}`
+      );
     } finally {
       setLoading(false);
     }
@@ -133,8 +137,11 @@ export function DigitalDock() {
     <div className="space-y-4">
       {/* Sub-tab bar + refresh */}
       <div className="flex items-center justify-between">
-        <div className="flex gap-1 bg-card border border-border rounded-lg p-1">
+        <div className="flex gap-1 bg-card border border-border rounded-lg p-1" role="tablist" aria-label="Digital Dock sections">
           <button
+            role="tab"
+            aria-selected={activeTab === "inspections"}
+            aria-controls="dock-panel-inspections"
             onClick={() => setActiveTab("inspections")}
             className={`flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-medium transition-colors ${
               activeTab === "inspections"
@@ -154,6 +161,9 @@ export function DigitalDock() {
             )}
           </button>
           <button
+            role="tab"
+            aria-selected={activeTab === "orders"}
+            aria-controls="dock-panel-orders"
             onClick={() => setActiveTab("orders")}
             className={`flex items-center gap-1.5 px-3 py-1.5 rounded text-xs font-medium transition-colors ${
               activeTab === "orders"
@@ -186,6 +196,22 @@ export function DigitalDock() {
           Refresh
         </Button>
       </div>
+
+      {/* Error banner */}
+      {fetchError && (
+        <div className="flex items-center gap-3 bg-red-950/50 border border-red-700/50 rounded-lg px-4 py-3">
+          <AlertTriangle className="h-5 w-5 text-red-400 shrink-0" />
+          <span className="text-sm text-red-300">{fetchError}</span>
+          <Button
+            variant="outline"
+            size="sm"
+            className="ml-auto border-red-700/50 text-red-300 hover:bg-red-950 text-xs"
+            onClick={fetchData}
+          >
+            Retry
+          </Button>
+        </div>
+      )}
 
       {/* Loading state */}
       {loading ? (

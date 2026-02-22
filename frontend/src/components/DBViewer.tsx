@@ -7,8 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { RefreshCw, Database, ArrowLeft } from "lucide-react";
 import Link from "next/link";
 import { ThemeToggle } from "./ThemeToggle";
-
-const API_BASE = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
+import { api } from "@/lib/api";
 
 const TABLES = [
   { key: "suppliers", label: "Suppliers", endpoint: "/api/db/suppliers" },
@@ -149,9 +148,7 @@ export function DBViewer() {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`${API_BASE}${table.endpoint}`);
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const rows = await res.json();
+      const rows = await api.getDBTable(table.endpoint);
       setData((prev) => ({ ...prev, [key]: rows }));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to fetch");

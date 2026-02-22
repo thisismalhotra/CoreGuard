@@ -37,24 +37,43 @@ export function LiveLogs({
   onClear: () => void;
 }) {
   const bottomRef = useRef<HTMLDivElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
   const [delay, setDelay] = useState(2);
+  const [isNearBottom, setIsNearBottom] = useState(true);
 
   // Fetch current delay from backend on mount
   useEffect(() => {
     api.getLogDelay().then((res) => setDelay(res.delay)).catch(() => {});
   }, []);
 
+  // Track scroll position — only auto-scroll if user is near the bottom
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [logs]);
+    const container = containerRef.current;
+    if (!container) return;
+    const handleScroll = () => {
+      const threshold = 80; // px from bottom
+      const nearBottom =
+        container.scrollHeight - container.scrollTop - container.clientHeight < threshold;
+      setIsNearBottom(nearBottom);
+    };
+    container.addEventListener("scroll", handleScroll);
+    return () => container.removeEventListener("scroll", handleScroll);
+  }, []);
+
+  useEffect(() => {
+    if (isNearBottom) {
+      bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+    }
+  }, [logs, isNearBottom]);
 
   const handleDelayChange = async (newDelay: number) => {
+    const prevDelay = delay;
     setDelay(newDelay);
     try {
       await api.setLogDelay(newDelay);
     } catch {
-      // Revert on failure
-      setDelay(delay);
+      // Revert on failure using captured previous value (not stale closure)
+      setDelay(prevDelay);
     }
   };
 
@@ -96,7 +115,7 @@ export function LiveLogs({
       </div>
 
       {/* Log terminal */}
-      <div className="bg-background rounded-lg border border-border font-mono text-sm h-[500px] overflow-y-auto p-4">
+      <div ref={containerRef} className="bg-background rounded-lg border border-border font-mono text-sm h-[500px] overflow-y-auto p-4">
         {logs.length === 0 && (
           <p className="text-muted-foreground animate-pulse">
             Awaiting agent activity...
@@ -107,7 +126,7 @@ export function LiveLogs({
             ? new Date(log.timestamp).toLocaleTimeString()
             : "--:--:--";
           return (
-            <div key={i} className="flex items-start gap-2 mb-1.5 leading-relaxed">
+            <div key={`${log.timestamp}-${log.agent}-${i}`} className="flex items-start gap-2 mb-1.5 leading-relaxed">
               <span className="text-muted-foreground/60 shrink-0 w-[72px]">{time}</span>
               <Badge
                 variant="secondary"

@@ -11,8 +11,11 @@ Populates the FL-001 Flashlight dataset:
 Run: python seed.py
 """
 
+import logging
 import sys
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 # Ensure the backend package is importable when running as a script
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -30,7 +33,7 @@ def seed() -> None:
 
     # Guard against double-seeding
     if db.query(Supplier).first():
-        print("Database already seeded. Delete coreguard.db to re-seed.")
+        logger.info("Database already seeded. Delete coreguard.db to re-seed.")
         db.close()
         return
 
@@ -171,12 +174,12 @@ def seed() -> None:
     db.commit()
     db.close()
 
-    print("Seeded Core-Guard database successfully.")
-    print(f"  - {len(suppliers_data)} suppliers")
-    print(f"  - {len(parts_data)} parts")
-    print(f"  - {len(bom_data)} BOM entries")
-    print(f"  - {len(inventory_data)} inventory records")
-    print(f"  - {len(forecast_data)} demand forecasts")
+    logger.info("Seeded Core-Guard database successfully.")
+    logger.info("  - %d suppliers", len(suppliers_data))
+    logger.info("  - %d parts", len(parts_data))
+    logger.info("  - %d BOM entries", len(bom_data))
+    logger.info("  - %d inventory records", len(inventory_data))
+    logger.info("  - %d demand forecasts", len(forecast_data))
 
 
 if __name__ == "__main__":

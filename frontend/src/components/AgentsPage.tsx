@@ -18,8 +18,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { ThemeToggle } from "./ThemeToggle";
-
-const API_BASE = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
+import { api, type Agent } from "@/lib/api";
 
 const ICON_MAP: Record<string, React.ReactNode> = {
   Radio: <Radio className="h-6 w-6" />,
@@ -37,21 +36,6 @@ const COLOR_MAP: Record<string, { bg: string; border: string; badge: string; tex
   orange: { bg: "bg-orange-950/30", border: "border-orange-800/50", badge: "bg-orange-600", text: "text-orange-400" },
 };
 
-type Agent = {
-  name: string;
-  role: string;
-  description: string;
-  trigger: string;
-  inputs: string[];
-  outputs: string[];
-  downstream: string | null;
-  constitution: string | null;
-  rules: string[];
-  color: string;
-  icon: string;
-  source_file: string;
-};
-
 function AgentCard({ agent, isExpanded, onToggle }: { agent: Agent; isExpanded: boolean; onToggle: () => void }) {
   const colors = COLOR_MAP[agent.color] || COLOR_MAP.blue;
 
@@ -60,6 +44,8 @@ function AgentCard({ agent, isExpanded, onToggle }: { agent: Agent; isExpanded: 
       {/* Header — always visible */}
       <button
         onClick={onToggle}
+        aria-expanded={isExpanded}
+        aria-label={`${isExpanded ? "Collapse" : "Expand"} ${agent.name} agent details`}
         className="w-full flex items-center justify-between p-5 text-left hover:bg-foreground/5 transition-colors"
       >
         <div className="flex items-center gap-4">
@@ -164,17 +150,20 @@ function AgentCard({ agent, isExpanded, onToggle }: { agent: Agent; isExpanded: 
 export function AgentsPage() {
   const [agents, setAgents] = useState<Agent[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
 
   useEffect(() => {
-    fetch(`${API_BASE}/api/agents`)
-      .then((res) => res.json())
+    api.getAgents()
       .then((data) => {
         setAgents(data);
+        setError(null);
         // Expand all by default
-        setExpanded(new Set(data.map((a: Agent) => a.name)));
+        setExpanded(new Set(data.map((a) => a.name)));
       })
-      .catch(() => {})
+      .catch((err) => {
+        setError(err instanceof Error ? err.message : "Failed to load agents");
+      })
       .finally(() => setLoading(false));
   }, []);
 
@@ -250,6 +239,16 @@ export function AgentsPage() {
           );
         })}
       </div>
+
+      {/* Error banner */}
+      {error && (
+        <div className="mb-4 flex items-center gap-3 bg-red-950/50 border border-red-700/50 rounded-lg px-4 py-3">
+          <AlertTriangle className="h-5 w-5 text-red-400 shrink-0" />
+          <span className="text-sm text-red-300">
+            Failed to load agents: {error}. Is the backend running?
+          </span>
+        </div>
+      )}
 
       {/* Agent cards */}
       {loading ? (

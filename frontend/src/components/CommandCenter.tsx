@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Activity, Terminal, Shield, Zap, Database, Bot } from "lucide-react";
+import { Activity, Terminal, Shield, Zap, Database, Bot, AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
 import { getSocket, type AgentLog } from "@/lib/socket";
@@ -19,6 +19,7 @@ export function CommandCenter() {
   const [inventory, setInventory] = useState<InventoryItem[]>([]);
   const [kpis, setKPIs] = useState<KPIs | null>(null);
   const [connected, setConnected] = useState(false);
+  const [backendError, setBackendError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState("logs");
 
   const refreshData = useCallback(async () => {
@@ -28,6 +29,7 @@ export function CommandCenter() {
         api.getKPIs(),
         api.getLogs(),
       ]);
+      setBackendError(null);
       setInventory(inv);
       setKPIs(kpiData);
       // Merge persisted logs with live ones (deduplicate via timestamp+agent+message composite key)
@@ -43,6 +45,7 @@ export function CommandCenter() {
       });
     } catch (err) {
       console.error("Failed to refresh data:", err);
+      setBackendError("Backend unreachable. Is the server running on port 8000?");
     }
   }, []);
 
@@ -112,6 +115,22 @@ export function CommandCenter() {
           </div>
         </div>
       </div>
+
+      {/* Error banner */}
+      {backendError && (
+        <div className="mb-4 flex items-center gap-3 bg-red-950/50 border border-red-700/50 rounded-lg px-4 py-3">
+          <AlertTriangle className="h-5 w-5 text-red-400 shrink-0" />
+          <span className="text-sm text-red-300">{backendError}</span>
+          <Button
+            variant="outline"
+            size="sm"
+            className="ml-auto border-red-700/50 text-red-300 hover:bg-red-950 text-xs"
+            onClick={refreshData}
+          >
+            Retry
+          </Button>
+        </div>
+      )}
 
       {/* KPIs */}
       <div className="mb-6">
