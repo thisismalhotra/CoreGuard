@@ -201,12 +201,38 @@ def _attempt_reallocation(
     logs: list[dict[str, str]],
 ) -> dict[str, Any] | None:
     """
-    Check if other finished goods using this component have excess inventory
-    that can be reallocated to cover the gap.
+    Check if the component itself has surplus inventory that can be reallocated
+    from reserves held against other finished goods.
 
-    Only reallocates from lower-priority variants (FL-001-S before FL-001-T).
+    The reallocation logic works on the COMPONENT's inventory, not the parent
+    finished good's inventory. We check other parents that use this component
+    and determine if any of their reserved allocations can be transferred.
+
+    Returns a REALLOCATE action if enough surplus exists, or None if a
+    BUY_ORDER is still needed (partial reallocations are logged but not
+    returned as actions — the remaining gap generates a buy order).
     """
-    # Find other parents that use this same component
+    component_inventory = component.inventory
+    if not component_inventory:
+        return None
+
+    # The component's own surplus: stock above safety stock that isn't reserved
+    # Safety stock acts as floor — we never reallocate below it
+    surplus_above_safety = component_inventory.available - component_inventory.safety_stock
+
+    if surplus_above_safety <= 0:
+        logs.append(_log(
+            db,
+            f"Reallocation check: {component.part_id} has no surplus above safety stock "
+            f"(available={component_inventory.available}, safety={component_inventory.safety_stock}). "
+            f"Cannot reallocate.",
+            "info",
+        ))
+        return None
+
+    reallocatable = min(surplus_above_safety, gap)
+
+    # Find which other parent's allocation we're borrowing from (for logging)
     other_bom_entries = (
         db.query(BOMEntry)
         .filter(
@@ -216,39 +242,33 @@ def _attempt_reallocation(
         .all()
     )
 
-    for other_bom in other_bom_entries:
-        other_parent = other_bom.parent
-        other_inventory = other_parent.inventory
+    donor_names = [e.parent.part_id for e in other_bom_entries if e.parent]
 
-        if not other_inventory:
-            continue
+    logs.append(_log(
+        db,
+        f"REALLOCATE: Moving {reallocatable} units of {component.part_id} "
+        f"from surplus pool (donors: {', '.join(donor_names) or 'general stock'}, "
+        f"surplus above safety: {surplus_above_safety}).",
+        "success",
+    ))
 
-        # Available surplus from the other variant's allocation
-        surplus = other_inventory.available
-        if surplus <= 0:
-            continue
+    # Reserve the reallocated stock so it's no longer "available"
+    component_inventory.reserved += reallocatable
 
-        reallocatable = min(surplus, gap)
-        logs.append(_log(
-            db,
-            f"REALLOCATE: Moving {reallocatable} units of {component.part_id} "
-            f"from {other_parent.part_id} reserve (available: {surplus}).",
-            "success",
-        ))
+    if reallocatable >= gap:
+        return {
+            "type": "REALLOCATE",
+            "part_id": component.part_id,
+            "source_sku": donor_names[0] if donor_names else "general_stock",
+            "quantity": reallocatable,
+        }
 
-        # Update inventory: reserve stock from the donor variant
-        other_inventory.reserved += reallocatable
-        component_inventory = component.inventory
-        if component_inventory:
-            component_inventory.reserved += reallocatable
-
-        if reallocatable >= gap:
-            return {
-                "type": "REALLOCATE",
-                "part_id": component.part_id,
-                "source_sku": other_parent.part_id,
-                "quantity": reallocatable,
-            }
-
-    # Partial or no reallocation possible
+    # Partial reallocation — log it, but return None so a BUY_ORDER covers the rest
+    remaining = gap - reallocatable
+    logs.append(_log(
+        db,
+        f"Partial reallocation: {reallocatable}/{gap} units covered. "
+        f"Remaining {remaining} units must be procured externally.",
+        "warning",
+    ))
     return None

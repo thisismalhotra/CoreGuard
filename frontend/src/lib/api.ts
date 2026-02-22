@@ -38,10 +38,20 @@ export type KPIs = {
   total_orders: number;
 };
 
+export type QualityInspection = {
+  id: number;
+  part: string | null;
+  batch_size: number;
+  result: string;
+  notes: string | null;
+  inspected_at: string | null;
+};
+
 export const api = {
   getInventory: () => fetchJSON<InventoryItem[]>("/api/inventory"),
   getOrders: () => fetchJSON<PurchaseOrder[]>("/api/orders"),
   getKPIs: () => fetchJSON<KPIs>("/api/kpis"),
+  getQualityInspections: () => fetchJSON<QualityInspection[]>("/api/db/quality_inspections"),
   getLogs: (limit = 50) =>
     fetchJSON<{ timestamp: string; agent: string; message: string; type: string }[]>(
       `/api/logs?limit=${limit}`

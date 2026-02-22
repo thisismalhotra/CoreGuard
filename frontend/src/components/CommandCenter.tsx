@@ -11,6 +11,7 @@ import { KPIPanel } from "./KPIPanel";
 import { LiveLogs } from "./LiveLogs";
 import { InventoryCards } from "./InventoryCards";
 import { GodMode } from "./GodMode";
+import { DigitalDock } from "./DigitalDock";
 import { ThemeToggle } from "./ThemeToggle";
 
 export function CommandCenter() {
@@ -143,12 +144,7 @@ export function CommandCenter() {
         </TabsContent>
 
         <TabsContent value="dock" className="mt-4">
-          <div className="bg-card rounded-lg border border-border p-8 text-center">
-            <Shield className="h-12 w-12 text-muted-foreground/60 mx-auto mb-3" />
-            <p className="text-muted-foreground">
-              Eagle-Eye Quality Agent — coming in next iteration.
-            </p>
-          </div>
+          <DigitalDock />
         </TabsContent>
 
         <TabsContent value="godmode" className="mt-4">
