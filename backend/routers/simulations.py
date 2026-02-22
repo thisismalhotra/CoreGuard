@@ -113,6 +113,10 @@ async def simulate_demand_spike(
         all_logs.extend(ghost_result["logs"])
         await emit_logs(ghost_result["logs"])
 
+    # Single atomic commit — all agent work (Aura, Dispatcher, Core-Guard, Ghost-Writer)
+    # is flushed during execution; we commit once at the end of the simulation.
+    db.commit()
+
     return {
         "status": "simulation_complete",
         "scenario": "DEMAND_SPIKE",
@@ -225,8 +229,6 @@ async def simulate_supply_shock(
         all_logs.append(log)
         await emit_logs([log])
 
-    db.commit()
-
     # Step 3: Ghost-Writer processes emergency POs
     ghost_result: dict[str, Any] = {"purchase_orders": [], "logs": []}
     if emergency_orders:
@@ -243,6 +245,8 @@ async def simulate_supply_shock(
     )
     all_logs.append(summary)
     await emit_logs([summary])
+
+    # Single atomic commit for the entire supply-shock simulation
     db.commit()
 
     return {
@@ -280,6 +284,9 @@ async def simulate_quality_fail(
         ghost_result = process_buy_orders(db, buy_orders)
         all_logs.extend(ghost_result["logs"])
         await emit_logs(ghost_result["logs"])
+
+    # Single atomic commit for the entire quality-fail simulation
+    db.commit()
 
     return {
         "status": "simulation_complete",
@@ -380,6 +387,9 @@ async def simulate_cascade_failure(
     )
     all_logs.append(summary)
     await emit_logs([summary])
+
+    # Single atomic commit for the entire cascade-failure simulation
+    db.commit()
 
     return {
         "status": "simulation_complete",

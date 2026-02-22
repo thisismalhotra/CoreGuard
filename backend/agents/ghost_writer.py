@@ -141,7 +141,8 @@ def process_buy_orders(
             "success" if status == OrderStatus.APPROVED else "warning",
         ))
 
-    db.commit()
+    # NOTE: No db.commit() here — the calling simulation endpoint owns the transaction.
+    # Agents only flush() to get IDs; the single commit happens in the router.
 
     return {
         "purchase_orders": created_pos,

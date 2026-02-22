@@ -95,7 +95,8 @@ def detect_demand_spike(
             "success",
         ))
 
-    db.commit()
+    # NOTE: No db.commit() here — the calling simulation endpoint owns the transaction.
+    # Agents only flush() to get IDs; the single commit happens in the router.
 
     return {
         "spike_detected": spike_detected,

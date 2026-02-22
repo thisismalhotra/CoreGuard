@@ -182,7 +182,8 @@ def calculate_net_requirements(
             "info",
         ))
 
-    db.commit()
+    # NOTE: No db.commit() here — the calling simulation endpoint owns the transaction.
+    # Agents only flush() to get IDs; the single commit happens in the router.
 
     return {
         "sku": sku,
