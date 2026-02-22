@@ -77,6 +77,12 @@ export const api = {
     fetchJSON<Record<string, unknown>>("/api/simulate/constitution-breach", { method: "POST" }),
   simulateFullBlackout: () =>
     fetchJSON<Record<string, unknown>>("/api/simulate/full-blackout", { method: "POST" }),
+  updateOrderStatus: (poNumber: string, status: "APPROVED" | "CANCELLED") =>
+    fetchJSON<PurchaseOrder>(`/api/orders/${poNumber}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status }),
+    }),
   resetSimulation: () =>
     fetchJSON<Record<string, unknown>>("/api/simulate/reset", { method: "POST" }),
   getLogDelay: () =>

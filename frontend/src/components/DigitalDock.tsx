@@ -70,6 +70,26 @@ export function DigitalDock() {
   const [orders, setOrders] = useState<PurchaseOrder[]>([]);
   const [loading, setLoading] = useState(true);
   const [expandedPO, setExpandedPO] = useState<Set<string>>(new Set());
+  const [updatingPO, setUpdatingPO] = useState<string | null>(null);
+  const [poError, setPOError] = useState<string | null>(null);
+
+  const handleUpdateStatus = async (
+    poNumber: string,
+    status: "APPROVED" | "CANCELLED"
+  ) => {
+    setUpdatingPO(poNumber);
+    setPOError(null);
+    try {
+      await api.updateOrderStatus(poNumber, status);
+      await fetchData();
+    } catch (err) {
+      setPOError(
+        `Failed to ${status === "APPROVED" ? "approve" : "reject"} ${poNumber}: ${err instanceof Error ? err.message : "Unknown error"}`
+      );
+    } finally {
+      setUpdatingPO(null);
+    }
+  };
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -395,6 +415,43 @@ export function DigitalDock() {
                               Total cost exceeds $5,000 limit. Human approval
                               required before funds can be committed.
                             </p>
+                            <div className="flex items-center gap-2 mt-3">
+                              <Button
+                                size="sm"
+                                className="bg-green-700 hover:bg-green-600 text-white gap-1.5 text-xs h-7 px-3"
+                                disabled={updatingPO === po.po_number}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleUpdateStatus(po.po_number, "APPROVED");
+                                }}
+                              >
+                                <CheckCircle className="h-3.5 w-3.5" />
+                                {updatingPO === po.po_number
+                                  ? "Approving..."
+                                  : "Approve"}
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="border-red-700/50 text-red-400 hover:bg-red-950/50 hover:text-red-300 gap-1.5 text-xs h-7 px-3"
+                                disabled={updatingPO === po.po_number}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleUpdateStatus(po.po_number, "CANCELLED");
+                                }}
+                              >
+                                <XCircle className="h-3.5 w-3.5" />
+                                {updatingPO === po.po_number
+                                  ? "Rejecting..."
+                                  : "Reject"}
+                              </Button>
+                            </div>
+                            {poError &&
+                              poError.includes(po.po_number) && (
+                                <p className="text-xs text-red-400 mt-2">
+                                  {poError}
+                                </p>
+                              )}
                           </div>
                         )}
                         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">

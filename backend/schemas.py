@@ -63,6 +63,14 @@ class CreatePurchaseOrderRequest(BaseModel):
     unit_cost: float = Field(ge=0.0, description="Cost per unit")
 
 
+class UpdateOrderStatusRequest(BaseModel):
+    """Request body for approving or rejecting a pending purchase order."""
+    status: str = Field(
+        description="New status: 'APPROVED' or 'CANCELLED'",
+        pattern="^(APPROVED|CANCELLED)$",
+    )
+
+
 class PurchaseOrderSummary(BaseModel):
     """Compact PO summary returned inside simulation results."""
     po_number: str

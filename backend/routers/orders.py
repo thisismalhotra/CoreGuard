@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from database.connection import get_db
 from database.models import PurchaseOrder, Part, Supplier, OrderStatus
-from schemas import PurchaseOrderResponse, CreatePurchaseOrderRequest
+from schemas import PurchaseOrderResponse, CreatePurchaseOrderRequest, UpdateOrderStatusRequest
 
 router = APIRouter(prefix="/api", tags=["orders"])
 
@@ -89,4 +89,44 @@ def create_order(
         "status": status.value,
         "created_at": po.created_at.isoformat(),
         "triggered_by": "Manual",
+    }
+
+
+@router.patch("/orders/{po_number}", response_model=PurchaseOrderResponse)
+def update_order_status(
+    po_number: str,
+    body: UpdateOrderStatusRequest,
+    db: Session = Depends(get_db),
+) -> dict:
+    """
+    Approve or reject a purchase order that is pending human approval.
+
+    Only allows transitions FROM PENDING_APPROVAL to APPROVED or CANCELLED.
+    This is the human-in-the-loop step for the Financial Constitution (Rule C).
+    """
+    po = db.query(PurchaseOrder).filter(PurchaseOrder.po_number == po_number).first()
+    if not po:
+        raise HTTPException(status_code=404, detail=f"Purchase order '{po_number}' not found")
+
+    if po.status != OrderStatus.PENDING_APPROVAL:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Cannot update PO '{po_number}': current status is '{po.status.value}', "
+                   f"only PENDING_APPROVAL orders can be approved or rejected.",
+        )
+
+    new_status = OrderStatus(body.status)
+    po.status = new_status
+    db.commit()
+
+    return {
+        "po_number": po.po_number,
+        "part_id": po.part.part_id,
+        "supplier": po.supplier.name,
+        "quantity": po.quantity,
+        "unit_cost": po.unit_cost,
+        "total_cost": po.total_cost,
+        "status": po.status.value,
+        "created_at": po.created_at.isoformat(),
+        "triggered_by": po.triggered_by,
     }
