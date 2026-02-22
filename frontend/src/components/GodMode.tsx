@@ -126,15 +126,15 @@ export function GodMode({
           const isRunning = result?.status === "running";
 
           return (
-            <Card key={scenario.id} className="bg-gray-900 border-gray-800 flex flex-col">
+            <Card key={scenario.id} className="bg-card border-border flex flex-col">
               <CardHeader className="pb-2">
-                <CardTitle className="flex items-center gap-2 text-sm font-semibold text-gray-100">
+                <CardTitle className="flex items-center gap-2 text-sm font-semibold text-foreground">
                   <Icon className="h-4 w-4 shrink-0" />
                   {scenario.label}
                 </CardTitle>
               </CardHeader>
               <CardContent className="flex flex-col flex-1 justify-between">
-                <p className="text-xs text-gray-400 mb-4 leading-relaxed">{scenario.description}</p>
+                <p className="text-xs text-muted-foreground mb-4 leading-relaxed">{scenario.description}</p>
 
                 {result?.status === "success" && (
                   <div className="flex items-center gap-1.5 mb-2">
@@ -163,10 +163,10 @@ export function GodMode({
       </div>
 
       {/* Reset Button */}
-      <div className="flex justify-end pt-2 border-t border-gray-800">
+      <div className="flex justify-end pt-2 border-t border-border">
         <Button
           variant="outline"
-          className="border-gray-700 text-gray-400 hover:text-white hover:border-gray-500 gap-2 text-xs"
+          className="border-input text-muted-foreground hover:text-foreground hover:border-foreground/30 gap-2 text-xs"
           onClick={handleReset}
           disabled={isAnyRunning || resetting}
         >

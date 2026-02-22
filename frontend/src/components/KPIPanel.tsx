@@ -39,12 +39,12 @@ export function KPIPanel({ kpis }: { kpis: KPIs | null }) {
   return (
     <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
       {KPI_CARDS.map(({ key, label, icon: Icon, format, color }) => (
-        <Card key={key} className="bg-gray-900 border-gray-800">
+        <Card key={key} className="bg-card border-border">
           <CardContent className="pt-4 pb-4">
             <div className="flex items-center gap-3">
               <Icon className={`h-8 w-8 ${color}`} />
               <div>
-                <p className="text-xs text-gray-400 uppercase tracking-wider">{label}</p>
+                <p className="text-xs text-muted-foreground uppercase tracking-wider">{label}</p>
                 <p className={`text-2xl font-bold font-mono ${color}`}>
                   {kpis ? format(kpis[key]) : "—"}
                 </p>

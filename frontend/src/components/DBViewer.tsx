@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { RefreshCw, Database, ArrowLeft } from "lucide-react";
 import Link from "next/link";
+import { ThemeToggle } from "./ThemeToggle";
 
 const API_BASE = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
 
@@ -46,7 +47,7 @@ function inspectionColor(result: string): string {
 function DataTable({ rows }: { rows: Record<string, unknown>[] }) {
   if (rows.length === 0) {
     return (
-      <div className="text-center py-12 text-gray-500">
+      <div className="text-center py-12 text-muted-foreground">
         No records found.
       </div>
     );
@@ -58,11 +59,11 @@ function DataTable({ rows }: { rows: Record<string, unknown>[] }) {
     <div className="overflow-x-auto">
       <table className="w-full text-sm">
         <thead>
-          <tr className="border-b border-gray-800">
+          <tr className="border-b border-border">
             {columns.map((col) => (
               <th
                 key={col}
-                className="text-left px-3 py-2 text-gray-400 font-medium text-xs uppercase tracking-wider whitespace-nowrap"
+                className="text-left px-3 py-2 text-muted-foreground font-medium text-xs uppercase tracking-wider whitespace-nowrap"
               >
                 {col}
               </th>
@@ -73,7 +74,7 @@ function DataTable({ rows }: { rows: Record<string, unknown>[] }) {
           {rows.map((row, i) => (
             <tr
               key={i}
-              className="border-b border-gray-800/50 hover:bg-gray-800/30 transition-colors"
+              className="border-b border-border/50 hover:bg-muted/30 transition-colors"
             >
               {columns.map((col) => {
                 const val = row[col];
@@ -107,7 +108,7 @@ function DataTable({ rows }: { rows: Record<string, unknown>[] }) {
                 } else if (typeof val === "boolean") {
                   content = val ? "Yes" : "No";
                 } else if (val === null || val === undefined) {
-                  content = <span className="text-gray-600">—</span>;
+                  content = <span className="text-muted-foreground/60">—</span>;
                 } else if (typeof val === "string" && val.includes("T") && val.includes(":")) {
                   // ISO timestamp — format nicely
                   try {
@@ -120,7 +121,7 @@ function DataTable({ rows }: { rows: Record<string, unknown>[] }) {
                 }
 
                 return (
-                  <td key={col} className="px-3 py-2 text-gray-300 whitespace-nowrap max-w-[400px] truncate">
+                  <td key={col} className="px-3 py-2 text-foreground/80 whitespace-nowrap max-w-[400px] truncate">
                     {content}
                   </td>
                 );
@@ -165,10 +166,9 @@ export function DBViewer() {
   }, [activeTable, fetchTable]);
 
   const rows = data[activeTable] || [];
-  const activeConfig = TABLES.find((t) => t.key === activeTable);
 
   return (
-    <div className="min-h-screen bg-gray-950 text-gray-100 p-6">
+    <div className="min-h-screen bg-background text-foreground p-6">
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <div className="flex items-center gap-4">
@@ -176,7 +176,7 @@ export function DBViewer() {
             <Button
               variant="outline"
               size="sm"
-              className="border-gray-700 text-gray-400 hover:text-white hover:border-gray-500 gap-1.5"
+              className="border-input text-muted-foreground hover:text-foreground hover:border-foreground/30 gap-1.5"
             >
               <ArrowLeft className="h-3.5 w-3.5" />
               Dashboard
@@ -187,19 +187,20 @@ export function DBViewer() {
               <Database className="h-6 w-6 text-blue-400" />
               DB Viewer
             </h1>
-            <p className="text-sm text-gray-500">
+            <p className="text-sm text-muted-foreground">
               Raw SQLite tables — Core-Guard FL-001 dataset
             </p>
           </div>
         </div>
         <div className="flex items-center gap-3">
-          <span className="text-xs text-gray-500">
+          <span className="text-xs text-muted-foreground">
             {rows.length} {rows.length === 1 ? "row" : "rows"}
           </span>
+          <ThemeToggle />
           <Button
             variant="outline"
             size="sm"
-            className="border-gray-700 text-gray-400 hover:text-white hover:border-gray-500 gap-1.5"
+            className="border-input text-muted-foreground hover:text-foreground hover:border-foreground/30 gap-1.5"
             onClick={() => fetchTable(activeTable)}
             disabled={loading}
           >
@@ -211,12 +212,12 @@ export function DBViewer() {
 
       {/* Table Tabs */}
       <Tabs value={activeTable} onValueChange={(v) => setActiveTable(v as TableKey)} className="w-full">
-        <TabsList className="bg-gray-900 border border-gray-800 flex-wrap h-auto gap-1 p-1">
+        <TabsList className="bg-card border border-border flex-wrap h-auto gap-1 p-1">
           {TABLES.map((t) => (
             <TabsTrigger
               key={t.key}
               value={t.key}
-              className="data-[state=active]:bg-gray-800 text-xs"
+              className="data-[state=active]:bg-muted text-xs"
             >
               {t.label}
             </TabsTrigger>
@@ -225,13 +226,13 @@ export function DBViewer() {
 
         {TABLES.map((t) => (
           <TabsContent key={t.key} value={t.key} className="mt-4">
-            <div className="bg-gray-900 rounded-lg border border-gray-800 overflow-hidden">
+            <div className="bg-card rounded-lg border border-border overflow-hidden">
               {error ? (
                 <div className="p-8 text-center text-red-400">
                   Error: {error}
                 </div>
               ) : loading ? (
-                <div className="p-8 text-center text-gray-500 animate-pulse">
+                <div className="p-8 text-center text-muted-foreground animate-pulse">
                   Loading {t.label}...
                 </div>
               ) : (

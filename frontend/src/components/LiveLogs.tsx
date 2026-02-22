@@ -62,18 +62,18 @@ export function LiveLogs({
     <div className="space-y-2">
       {/* Toolbar */}
       <div className="flex items-center justify-between">
-        <span className="text-xs text-gray-500">
+        <span className="text-xs text-muted-foreground">
           {logs.length} {logs.length === 1 ? "entry" : "entries"}
         </span>
         <div className="flex items-center gap-3">
           {/* Log delay selector */}
           <div className="flex items-center gap-1.5">
-            <Clock className="h-3 w-3 text-gray-500" />
-            <span className="text-xs text-gray-500">Delay:</span>
+            <Clock className="h-3 w-3 text-muted-foreground" />
+            <span className="text-xs text-muted-foreground">Delay:</span>
             <select
               value={delay}
               onChange={(e) => handleDelayChange(Number(e.target.value))}
-              className="bg-gray-900 border border-gray-700 text-gray-300 text-xs rounded px-1.5 py-0.5 h-7 focus:outline-none focus:border-blue-500 cursor-pointer"
+              className="bg-card border border-input text-foreground/80 text-xs rounded px-1.5 py-0.5 h-7 focus:outline-none focus:border-blue-500 cursor-pointer"
             >
               {DELAY_OPTIONS.map((opt) => (
                 <option key={opt.value} value={opt.value}>
@@ -85,7 +85,7 @@ export function LiveLogs({
           <Button
             variant="outline"
             size="sm"
-            className="border-gray-700 text-gray-400 hover:text-white hover:border-gray-500 gap-1.5 text-xs h-7"
+            className="border-input text-muted-foreground hover:text-foreground hover:border-foreground/30 gap-1.5 text-xs h-7"
             onClick={onClear}
             disabled={logs.length === 0}
           >
@@ -96,9 +96,9 @@ export function LiveLogs({
       </div>
 
       {/* Log terminal */}
-      <div className="bg-gray-950 rounded-lg border border-gray-800 font-mono text-sm h-[500px] overflow-y-auto p-4">
+      <div className="bg-background rounded-lg border border-border font-mono text-sm h-[500px] overflow-y-auto p-4">
         {logs.length === 0 && (
-          <p className="text-gray-500 animate-pulse">
+          <p className="text-muted-foreground animate-pulse">
             Awaiting agent activity...
           </p>
         )}
@@ -108,14 +108,14 @@ export function LiveLogs({
             : "--:--:--";
           return (
             <div key={i} className="flex items-start gap-2 mb-1.5 leading-relaxed">
-              <span className="text-gray-600 shrink-0 w-[72px]">{time}</span>
+              <span className="text-muted-foreground/60 shrink-0 w-[72px]">{time}</span>
               <Badge
                 variant="secondary"
                 className={`${AGENT_COLORS[log.agent] || "bg-gray-600"} text-white text-[10px] shrink-0 w-[90px] justify-center`}
               >
                 {log.agent}
               </Badge>
-              <span className={LOG_TYPE_STYLES[log.type] || "text-gray-300"}>
+              <span className={LOG_TYPE_STYLES[log.type] || "text-foreground/80"}>
                 {log.message}
               </span>
             </div>

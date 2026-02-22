@@ -11,6 +11,7 @@ import { KPIPanel } from "./KPIPanel";
 import { LiveLogs } from "./LiveLogs";
 import { InventoryCards } from "./InventoryCards";
 import { GodMode } from "./GodMode";
+import { ThemeToggle } from "./ThemeToggle";
 
 export function CommandCenter() {
   const [logs, setLogs] = useState<AgentLog[]>([]);
@@ -63,14 +64,14 @@ export function CommandCenter() {
   }, [refreshData]);
 
   return (
-    <div className="min-h-screen bg-gray-950 text-gray-100 p-6">
+    <div className="min-h-screen bg-background text-foreground p-6">
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-2xl font-bold tracking-tight">
             Core-Guard <span className="text-blue-400">Command Center</span>
           </h1>
-          <p className="text-sm text-gray-500">
+          <p className="text-sm text-muted-foreground">
             Autonomous Supply Chain Operating System — FL-001
           </p>
         </div>
@@ -79,7 +80,7 @@ export function CommandCenter() {
             <Button
               variant="outline"
               size="sm"
-              className="border-gray-700 text-gray-400 hover:text-white hover:border-gray-500 gap-1.5"
+              className="border-input text-muted-foreground hover:text-foreground hover:border-foreground/30 gap-1.5"
             >
               <Bot className="h-3.5 w-3.5" />
               Agents
@@ -89,17 +90,18 @@ export function CommandCenter() {
             <Button
               variant="outline"
               size="sm"
-              className="border-gray-700 text-gray-400 hover:text-white hover:border-gray-500 gap-1.5"
+              className="border-input text-muted-foreground hover:text-foreground hover:border-foreground/30 gap-1.5"
             >
               <Database className="h-3.5 w-3.5" />
               DB Viewer
             </Button>
           </Link>
+          <ThemeToggle />
           <div className="flex items-center gap-2">
             <div
               className={`h-2.5 w-2.5 rounded-full ${connected ? "bg-green-400 animate-pulse" : "bg-red-500"}`}
             />
-            <span className="text-xs text-gray-400">
+            <span className="text-xs text-muted-foreground">
               {connected ? "Live" : "Disconnected"}
             </span>
           </div>
@@ -113,20 +115,20 @@ export function CommandCenter() {
 
       {/* Tabbed Content */}
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-        <TabsList className="bg-gray-900 border border-gray-800">
-          <TabsTrigger value="status" className="data-[state=active]:bg-gray-800 gap-1.5">
+        <TabsList className="bg-card border border-border">
+          <TabsTrigger value="status" className="data-[state=active]:bg-muted gap-1.5">
             <Activity className="h-3.5 w-3.5" />
             Network Status
           </TabsTrigger>
-          <TabsTrigger value="logs" className="data-[state=active]:bg-gray-800 gap-1.5">
+          <TabsTrigger value="logs" className="data-[state=active]:bg-muted gap-1.5">
             <Terminal className="h-3.5 w-3.5" />
             Live Logs
           </TabsTrigger>
-          <TabsTrigger value="dock" className="data-[state=active]:bg-gray-800 gap-1.5">
+          <TabsTrigger value="dock" className="data-[state=active]:bg-muted gap-1.5">
             <Shield className="h-3.5 w-3.5" />
             Digital Dock
           </TabsTrigger>
-          <TabsTrigger value="godmode" className="data-[state=active]:bg-gray-800 gap-1.5">
+          <TabsTrigger value="godmode" className="data-[state=active]:bg-muted gap-1.5">
             <Zap className="h-3.5 w-3.5" />
             God Mode
           </TabsTrigger>
@@ -141,9 +143,9 @@ export function CommandCenter() {
         </TabsContent>
 
         <TabsContent value="dock" className="mt-4">
-          <div className="bg-gray-900 rounded-lg border border-gray-800 p-8 text-center">
-            <Shield className="h-12 w-12 text-gray-600 mx-auto mb-3" />
-            <p className="text-gray-400">
+          <div className="bg-card rounded-lg border border-border p-8 text-center">
+            <Shield className="h-12 w-12 text-muted-foreground/60 mx-auto mb-3" />
+            <p className="text-muted-foreground">
               Eagle-Eye Quality Agent — coming in next iteration.
             </p>
           </div>
