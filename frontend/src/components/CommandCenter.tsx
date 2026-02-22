@@ -2,7 +2,9 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Activity, Terminal, Shield, Zap } from "lucide-react";
+import { Activity, Terminal, Shield, Zap, Database, Bot } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import Link from "next/link";
 import { getSocket, type AgentLog } from "@/lib/socket";
 import { api, type InventoryItem, type KPIs } from "@/lib/api";
 import { KPIPanel } from "./KPIPanel";
@@ -15,6 +17,7 @@ export function CommandCenter() {
   const [inventory, setInventory] = useState<InventoryItem[]>([]);
   const [kpis, setKPIs] = useState<KPIs | null>(null);
   const [connected, setConnected] = useState(false);
+  const [activeTab, setActiveTab] = useState("logs");
 
   const refreshData = useCallback(async () => {
     try {
@@ -71,13 +74,35 @@ export function CommandCenter() {
             Autonomous Supply Chain Operating System — FL-001
           </p>
         </div>
-        <div className="flex items-center gap-2">
-          <div
-            className={`h-2.5 w-2.5 rounded-full ${connected ? "bg-green-400 animate-pulse" : "bg-red-500"}`}
-          />
-          <span className="text-xs text-gray-400">
-            {connected ? "Live" : "Disconnected"}
-          </span>
+        <div className="flex items-center gap-4">
+          <Link href="/agents">
+            <Button
+              variant="outline"
+              size="sm"
+              className="border-gray-700 text-gray-400 hover:text-white hover:border-gray-500 gap-1.5"
+            >
+              <Bot className="h-3.5 w-3.5" />
+              Agents
+            </Button>
+          </Link>
+          <Link href="/db">
+            <Button
+              variant="outline"
+              size="sm"
+              className="border-gray-700 text-gray-400 hover:text-white hover:border-gray-500 gap-1.5"
+            >
+              <Database className="h-3.5 w-3.5" />
+              DB Viewer
+            </Button>
+          </Link>
+          <div className="flex items-center gap-2">
+            <div
+              className={`h-2.5 w-2.5 rounded-full ${connected ? "bg-green-400 animate-pulse" : "bg-red-500"}`}
+            />
+            <span className="text-xs text-gray-400">
+              {connected ? "Live" : "Disconnected"}
+            </span>
+          </div>
         </div>
       </div>
 
@@ -87,7 +112,7 @@ export function CommandCenter() {
       </div>
 
       {/* Tabbed Content */}
-      <Tabs defaultValue="logs" className="w-full">
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
         <TabsList className="bg-gray-900 border border-gray-800">
           <TabsTrigger value="status" className="data-[state=active]:bg-gray-800 gap-1.5">
             <Activity className="h-3.5 w-3.5" />
@@ -112,7 +137,7 @@ export function CommandCenter() {
         </TabsContent>
 
         <TabsContent value="logs" className="mt-4">
-          <LiveLogs logs={logs} />
+          <LiveLogs logs={logs} onClear={() => setLogs([])} />
         </TabsContent>
 
         <TabsContent value="dock" className="mt-4">
@@ -125,7 +150,10 @@ export function CommandCenter() {
         </TabsContent>
 
         <TabsContent value="godmode" className="mt-4">
-          <GodMode onSimulationComplete={refreshData} />
+          <GodMode
+            onSimulationComplete={refreshData}
+            onSwitchToLogs={() => setActiveTab("logs")}
+          />
         </TabsContent>
       </Tabs>
     </div>

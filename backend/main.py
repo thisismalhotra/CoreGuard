@@ -19,10 +19,12 @@ from sqlalchemy.orm import Session
 from database.connection import init_db, get_db
 from database.models import (
     Part, Inventory, PurchaseOrder, Supplier, AgentLog, DemandForecast,
+    BOMEntry, QualityInspection,
 )
 from agents.aura import detect_demand_spike
 from agents.core_guard import calculate_net_requirements
 from agents.ghost_writer import process_buy_orders
+from agents.eagle_eye import inspect_batch
 
 
 # --- Socket.io setup ---
@@ -50,7 +52,10 @@ app.add_middleware(
 )
 
 # Mount Socket.io on the ASGI app
-socket_app = socketio.ASGIApp(sio, other_app=app)
+socket_app = socketio.ASGIApp(sio, other_asgi_app=app)
+
+# Configurable log delay (seconds between each log line in simulations)
+LOG_DELAY_SECONDS: float = 2.0
 
 
 # --- Socket.io events ---
@@ -69,8 +74,8 @@ async def emit_logs(logs: list[dict[str, str]]) -> None:
     """Broadcast Glass Box logs to all connected dashboard clients."""
     for log in logs:
         await sio.emit("agent_log", log)
-        # Small delay so the frontend can render logs sequentially
-        await asyncio.sleep(0.15)
+        # Simulate real-world agent processing time
+        await asyncio.sleep(LOG_DELAY_SECONDS)
 
 
 # --- REST Endpoints ---
@@ -170,6 +175,221 @@ def get_kpis(db: Session = Depends(get_db)) -> dict[str, Any]:
     }
 
 
+# --- Settings ---
+
+@app.get("/api/settings/log-delay")
+def get_log_delay() -> dict[str, float]:
+    """Return the current log delay setting."""
+    return {"delay": LOG_DELAY_SECONDS}
+
+
+@app.post("/api/settings/log-delay")
+def set_log_delay(delay: float = 2.0) -> dict[str, float]:
+    """Update the delay (in seconds) between each log line during simulations."""
+    global LOG_DELAY_SECONDS
+    # Clamp to reasonable range
+    LOG_DELAY_SECONDS = max(0.5, min(delay, 5.0))
+    return {"delay": LOG_DELAY_SECONDS}
+
+
+# --- Agents Metadata ---
+
+@app.get("/api/agents")
+def get_agents() -> list[dict[str, Any]]:
+    """Return metadata for all agents in the system."""
+    return [
+        {
+            "name": "Aura",
+            "role": "Demand Sensing Agent",
+            "description": "Monitors real-time sales data and demand signals. Detects when actual demand deviates from forecast thresholds, triggering the agent chain.",
+            "trigger": "Incoming demand data exceeds forecast by 20%+ (SPIKE_THRESHOLD = 1.2x)",
+            "inputs": ["SKU identifier", "New actual demand quantity", "Demand forecast table"],
+            "outputs": ["DEMAND_SPIKE event", "Spike multiplier", "Glass Box logs"],
+            "downstream": "Core-Guard",
+            "constitution": None,
+            "rules": [
+                "Stateless — reads DB state, never caches",
+                "Pure Python math for spike detection (Rule B)",
+                "Fires DEMAND_SPIKE when actual > forecast × 1.2",
+                "Updates actual_qty in DemandForecast table",
+            ],
+            "color": "purple",
+            "icon": "Radio",
+            "source_file": "agents/aura.py",
+        },
+        {
+            "name": "Core-Guard",
+            "role": "MRP Logic Agent",
+            "description": "The brain of the supply chain. Performs BOM explosion, calculates net material requirements using deterministic math, and decides whether to reallocate from substitute SKUs or issue buy orders.",
+            "trigger": "DEMAND_SPIKE event from Aura, or direct invocation from simulation endpoints",
+            "inputs": ["SKU identifier", "Demand quantity", "BOM table", "Inventory table"],
+            "outputs": ["Shortage analysis", "REALLOCATE actions", "BUY_ORDER actions", "Glass Box logs"],
+            "downstream": "Ghost-Writer",
+            "constitution": None,
+            "rules": [
+                "Stateless — operates on DB state passed in",
+                "All arithmetic done in Python (Rule B: never ask LLM to calculate)",
+                "Net Requirement = (Demand × BOM qty_per) - Available Inventory",
+                "Attempts REALLOCATE from substitute SKUs before issuing BUY_ORDER",
+                "Only reallocates from lower-priority variants (FL-001-S before FL-001-T)",
+            ],
+            "color": "blue",
+            "icon": "Shield",
+            "source_file": "agents/core_guard.py",
+        },
+        {
+            "name": "Ghost-Writer",
+            "role": "Procurement & PO Generation Agent",
+            "description": "Receives BUY_ORDER actions from Core-Guard, validates spend against the Financial Constitution, creates Purchase Order records, and generates PDF documents.",
+            "trigger": "BUY_ORDER actions from Core-Guard or Eagle-Eye",
+            "inputs": ["List of BUY_ORDER actions", "Parts table", "Suppliers table"],
+            "outputs": ["PurchaseOrder records", "PDF documents", "Glass Box logs"],
+            "downstream": None,
+            "constitution": "FINANCIAL GUARDRAIL (Rule C): If total_cost > $5,000, the PO status MUST be set to PENDING_APPROVAL. This is hard-coded and CANNOT be overridden by any LLM or agent. Human approval is required before funds can be committed.",
+            "rules": [
+                "Hard-coded spend limit: FINANCIAL_CONSTITUTION_MAX_SPEND = $5,000.00",
+                "total_cost > $5,000 → OrderStatus.PENDING_APPROVAL (no exceptions)",
+                "total_cost ≤ $5,000 → OrderStatus.APPROVED (auto-approved)",
+                "Generates PDF PO via fpdf2 to backend/generated_pos/",
+                "Each PO gets a unique PO number (PO-XXXXXXXX)",
+                "The LLM cannot override the financial constitution",
+            ],
+            "color": "emerald",
+            "icon": "FileText",
+            "source_file": "agents/ghost_writer.py",
+        },
+        {
+            "name": "Eagle-Eye",
+            "role": "Quality Inspection Agent",
+            "description": "Simulates receiving physical shipments at the Digital Dock. Runs automated sensor scans against CAD spec tolerances. Passes or fails batches and triggers emergency remediation on failure.",
+            "trigger": "Shipment arrival at Digital Dock (simulated via /simulate/quality-fail)",
+            "inputs": ["Part ID", "Batch size", "CAD spec tolerances"],
+            "outputs": ["PASS/FAIL inspection result", "Sensor readings", "BUY_ORDER actions (on fail)", "Glass Box logs"],
+            "downstream": "Ghost-Writer (on failure)",
+            "constitution": None,
+            "rules": [
+                "Stateless — operates on DB state passed in",
+                "Compares sensor readings against hard-coded CAD_SPECS tolerances",
+                "CH-101: hardness (8.0–10.0), dimension tolerance (±0.05mm)",
+                "SW-303: resistance (4.5–5.5Ω), cycle life (min 10,000)",
+                "LNS-505: clarity (min 95%), focal length tolerance (±0.1mm)",
+                "FAIL → quarantine batch (stock NOT added), trigger emergency reorder",
+                "PASS → add batch to inventory on_hand",
+                "AI Handover: in production, would use Pinecone vector DB for CAD comparisons",
+            ],
+            "color": "orange",
+            "icon": "Eye",
+            "source_file": "agents/eagle_eye.py",
+        },
+    ]
+
+
+# --- DB Viewer ---
+
+@app.get("/api/db/suppliers")
+def db_suppliers(db: Session = Depends(get_db)) -> list[dict[str, Any]]:
+    """Raw suppliers table dump."""
+    rows = db.query(Supplier).order_by(Supplier.id).all()
+    return [
+        {"id": s.id, "name": s.name, "contact_email": s.contact_email,
+         "lead_time_days": s.lead_time_days, "reliability_score": s.reliability_score,
+         "is_active": bool(s.is_active)}
+        for s in rows
+    ]
+
+
+@app.get("/api/db/parts")
+def db_parts(db: Session = Depends(get_db)) -> list[dict[str, Any]]:
+    """Raw parts table dump."""
+    rows = db.query(Part).order_by(Part.id).all()
+    return [
+        {"id": p.id, "part_id": p.part_id, "description": p.description,
+         "category": p.category.value, "unit_cost": p.unit_cost,
+         "supplier": p.supplier.name if p.supplier else None}
+        for p in rows
+    ]
+
+
+@app.get("/api/db/inventory")
+def db_inventory(db: Session = Depends(get_db)) -> list[dict[str, Any]]:
+    """Raw inventory table dump."""
+    rows = db.query(Inventory).order_by(Inventory.id).all()
+    return [
+        {"id": inv.id, "part": inv.part.part_id if inv.part else None,
+         "on_hand": inv.on_hand, "safety_stock": inv.safety_stock,
+         "reserved": inv.reserved, "available": inv.available,
+         "last_updated": inv.last_updated.isoformat() if inv.last_updated else None}
+        for inv in rows
+    ]
+
+
+@app.get("/api/db/bom")
+def db_bom(db: Session = Depends(get_db)) -> list[dict[str, Any]]:
+    """Raw BOM table dump."""
+    rows = db.query(BOMEntry).order_by(BOMEntry.id).all()
+    return [
+        {"id": b.id,
+         "parent": b.parent.part_id if b.parent else None,
+         "component": b.component.part_id if b.component else None,
+         "quantity_per": b.quantity_per}
+        for b in rows
+    ]
+
+
+@app.get("/api/db/orders")
+def db_orders(db: Session = Depends(get_db)) -> list[dict[str, Any]]:
+    """Raw purchase_orders table dump."""
+    rows = db.query(PurchaseOrder).order_by(PurchaseOrder.id).all()
+    return [
+        {"id": po.id, "po_number": po.po_number,
+         "part": po.part.part_id if po.part else None,
+         "supplier": po.supplier.name if po.supplier else None,
+         "quantity": po.quantity, "unit_cost": po.unit_cost,
+         "total_cost": po.total_cost, "status": po.status.value,
+         "triggered_by": po.triggered_by,
+         "created_at": po.created_at.isoformat() if po.created_at else None}
+        for po in rows
+    ]
+
+
+@app.get("/api/db/demand_forecast")
+def db_demand_forecast(db: Session = Depends(get_db)) -> list[dict[str, Any]]:
+    """Raw demand_forecast table dump."""
+    rows = db.query(DemandForecast).order_by(DemandForecast.id).all()
+    return [
+        {"id": d.id, "part": d.part.part_id if d.part else None,
+         "forecast_qty": d.forecast_qty, "actual_qty": d.actual_qty,
+         "period": d.period,
+         "updated_at": d.updated_at.isoformat() if d.updated_at else None}
+        for d in rows
+    ]
+
+
+@app.get("/api/db/quality_inspections")
+def db_quality_inspections(db: Session = Depends(get_db)) -> list[dict[str, Any]]:
+    """Raw quality_inspections table dump."""
+    rows = db.query(QualityInspection).order_by(QualityInspection.id).all()
+    return [
+        {"id": q.id, "part": q.part.part_id if q.part else None,
+         "batch_size": q.batch_size, "result": q.result.value,
+         "notes": q.notes,
+         "inspected_at": q.inspected_at.isoformat() if q.inspected_at else None}
+        for q in rows
+    ]
+
+
+@app.get("/api/db/agent_logs")
+def db_agent_logs(db: Session = Depends(get_db)) -> list[dict[str, Any]]:
+    """Raw agent_logs table dump."""
+    rows = db.query(AgentLog).order_by(AgentLog.id.desc()).limit(200).all()
+    return [
+        {"id": log.id, "agent": log.agent, "message": log.message,
+         "log_type": log.log_type,
+         "timestamp": log.timestamp.isoformat() if log.timestamp else None}
+        for log in rows
+    ]
+
+
 # --- Simulation Endpoints (God Mode) ---
 
 @app.post("/api/simulate/spike")
@@ -246,28 +466,533 @@ async def simulate_supply_shock(
 ) -> dict[str, Any]:
     """
     Scenario B: Simulate a supplier going offline (e.g., factory fire).
-    Deactivates the supplier and emits logs.
+
+    Full chain: Disable supplier → Identify affected parts → Core-Guard checks
+    if current inventory can cover safety stock → Ghost-Writer issues emergency
+    POs from alternate suppliers if needed.
     """
+    from datetime import datetime, timezone
+
+    all_logs: list[dict[str, str]] = []
+
     supplier = db.query(Supplier).filter(Supplier.name == supplier_name).first()
     if not supplier:
         return {"error": f"Supplier '{supplier_name}' not found"}
 
+    # --- Step 1: Disable the supplier ---
     supplier.is_active = 0
-    db.commit()
+    db.flush()
 
-    log = {
-        "timestamp": __import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat(),
+    shock_log = AgentLog(
+        agent="System",
+        message=f"SUPPLY SHOCK: {supplier_name} is now OFFLINE. Initiating emergency response.",
+        log_type="error",
+    )
+    db.add(shock_log)
+    db.flush()
+    shock_dict = {
+        "timestamp": datetime.now(timezone.utc).isoformat(),
         "agent": "System",
-        "message": f"SUPPLY SHOCK: {supplier_name} is now OFFLINE. Affected parts must be re-sourced.",
+        "message": shock_log.message,
         "type": "error",
     }
-    await sio.emit("agent_log", log)
+    all_logs.append(shock_dict)
+    await emit_logs([shock_dict])
+
+    # --- Step 2: Identify affected parts and assess impact ---
+    affected_parts = db.query(Part).filter(Part.supplier_id == supplier.id).all()
+    emergency_orders: list[dict[str, Any]] = []
+
+    for part in affected_parts:
+        inv = part.inventory
+        if not inv:
+            continue
+
+        # Log the impact assessment
+        impact_log = AgentLog(
+            agent="Core-Guard",
+            message=f"Assessing impact: {part.part_id} ({part.description}) — "
+                    f"primary supplier {supplier_name} offline.",
+            log_type="warning",
+        )
+        db.add(impact_log)
+        db.flush()
+        impact_dict = {
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "agent": "Core-Guard",
+            "message": impact_log.message,
+            "type": "warning",
+        }
+        all_logs.append(impact_dict)
+        await emit_logs([impact_dict])
+
+        # Check if current stock is below safety threshold
+        status_log = AgentLog(
+            agent="Core-Guard",
+            message=f"Inventory check: {part.part_id} — on_hand={inv.on_hand}, "
+                    f"safety_stock={inv.safety_stock}, available={inv.available}.",
+            log_type="info",
+        )
+        db.add(status_log)
+        db.flush()
+        status_dict = {
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "agent": "Core-Guard",
+            "message": status_log.message,
+            "type": "info",
+        }
+        all_logs.append(status_dict)
+        await emit_logs([status_dict])
+
+        # With supplier offline, we need to secure safety stock from alternates
+        # Order enough to cover safety stock buffer
+        order_qty = inv.safety_stock  # Replenish full safety stock from alternate
+
+        # Find an alternate supplier for this part category
+        alternate = (
+            db.query(Supplier)
+            .filter(
+                Supplier.id != supplier.id,
+                Supplier.is_active == 1,
+            )
+            .order_by(Supplier.reliability_score.desc())
+            .first()
+        )
+
+        if not alternate:
+            no_alt_log = AgentLog(
+                agent="Core-Guard",
+                message=f"CRITICAL: No alternate suppliers available for {part.part_id}!",
+                log_type="error",
+            )
+            db.add(no_alt_log)
+            db.flush()
+            no_alt_dict = {
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "agent": "Core-Guard",
+                "message": no_alt_log.message,
+                "type": "error",
+            }
+            all_logs.append(no_alt_dict)
+            await emit_logs([no_alt_dict])
+            continue
+
+        switch_log = AgentLog(
+            agent="Core-Guard",
+            message=f"Switching {part.part_id} to alternate supplier: {alternate.name} "
+                    f"(reliability: {alternate.reliability_score}, lead time: {alternate.lead_time_days}d).",
+            log_type="info",
+        )
+        db.add(switch_log)
+        db.flush()
+        switch_dict = {
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "agent": "Core-Guard",
+            "message": switch_log.message,
+            "type": "info",
+        }
+        all_logs.append(switch_dict)
+        await emit_logs([switch_dict])
+
+        # Build emergency BUY_ORDER
+        emergency_orders.append({
+            "type": "BUY_ORDER",
+            "part_id": part.part_id,
+            "quantity": order_qty,
+            "unit_cost": part.unit_cost,
+            "total_cost": round(order_qty * part.unit_cost, 2),
+            "supplier_id": alternate.id,
+            "supplier_name": alternate.name,
+            "triggered_by": "Core-Guard",
+        })
+
+        order_log = AgentLog(
+            agent="Core-Guard",
+            message=f"Emergency BUY_ORDER: {order_qty}x {part.part_id} from {alternate.name} "
+                    f"@ ${round(order_qty * part.unit_cost, 2):.2f}.",
+            log_type="warning",
+        )
+        db.add(order_log)
+        db.flush()
+        order_dict = {
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "agent": "Core-Guard",
+            "message": order_log.message,
+            "type": "warning",
+        }
+        all_logs.append(order_dict)
+        await emit_logs([order_dict])
+
+    db.commit()
+
+    # --- Step 3: Ghost-Writer processes emergency POs ---
+    ghost_result = {"purchase_orders": [], "logs": []}
+    if emergency_orders:
+        ghost_result = process_buy_orders(db, emergency_orders)
+        all_logs.extend(ghost_result["logs"])
+        await emit_logs(ghost_result["logs"])
+
+    # Final summary
+    summary_log = AgentLog(
+        agent="System",
+        message=f"Supply shock response complete: {supplier_name} disabled, "
+                f"{len(affected_parts)} part(s) affected, "
+                f"{len(ghost_result['purchase_orders'])} emergency PO(s) generated.",
+        log_type="success",
+    )
+    db.add(summary_log)
+    db.commit()
+    summary_dict = {
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "agent": "System",
+        "message": summary_log.message,
+        "type": "success",
+    }
+    all_logs.append(summary_dict)
+    await emit_logs([summary_dict])
 
     return {
-        "status": "supplier_disabled",
+        "status": "simulation_complete",
+        "scenario": "SUPPLY_SHOCK",
         "supplier": supplier_name,
-        "logs": [log],
+        "affected_parts": [p.part_id for p in affected_parts],
+        "procurement": ghost_result["purchase_orders"],
+        "logs": all_logs,
     }
+
+
+@app.post("/api/simulate/quality-fail")
+async def simulate_quality_fail(
+    part_id: str = "CH-101",
+    batch_size: int = 150,
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """
+    Scenario C: Simulate a batch of parts failing quality inspection at the dock.
+
+    Full chain: Eagle-Eye inspects → detects failures → quarantines batch →
+    triggers emergency reorder via Ghost-Writer.
+    """
+    all_logs: list[dict[str, str]] = []
+
+    # Eagle-Eye inspects the batch (force_fail=True for simulation drama)
+    inspection_result = inspect_batch(db, part_id, batch_size, force_fail=True)
+    all_logs.extend(inspection_result["logs"])
+    await emit_logs(inspection_result["logs"])
+
+    # If failed, Ghost-Writer processes the emergency reorder
+    ghost_result = {"purchase_orders": [], "logs": []}
+    buy_orders = inspection_result.get("actions", [])
+    if buy_orders:
+        ghost_result = process_buy_orders(db, buy_orders)
+        all_logs.extend(ghost_result["logs"])
+        await emit_logs(ghost_result["logs"])
+
+    return {
+        "status": "simulation_complete",
+        "scenario": "QUALITY_FAIL",
+        "part_id": part_id,
+        "batch_size": batch_size,
+        "inspection_result": inspection_result["result"],
+        "failed_checks": inspection_result.get("failed_checks", []),
+        "procurement": ghost_result["purchase_orders"],
+        "logs": all_logs,
+    }
+
+
+@app.post("/api/simulate/cascade-failure")
+async def simulate_cascade_failure(
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """
+    Scenario D: Cascade Failure — demand spike hits while AluForge is already offline.
+    Core-Guard must simultaneously handle reallocation AND source from alternates.
+    Tests multi-agent coordination under compounding stress.
+    """
+    from datetime import datetime, timezone
+    all_logs: list[dict[str, str]] = []
+
+    def _sys_log(msg: str, log_type: str = "info") -> dict:
+        entry = AgentLog(agent="System", message=msg, log_type=log_type)
+        db.add(entry)
+        db.flush()
+        return {"timestamp": datetime.now(timezone.utc).isoformat(), "agent": "System", "message": msg, "type": log_type}
+
+    # --- Act 1: Knock out AluForge silently first ---
+    aluforge = db.query(Supplier).filter(Supplier.name == "AluForge").first()
+    if aluforge:
+        aluforge.is_active = 0
+        db.flush()
+
+    log = _sys_log("CASCADE EVENT INITIATED: AluForge goes offline at the same moment a 500% demand spike hits FL-001-T.", "error")
+    all_logs.append(log)
+    await emit_logs([log])
+
+    log = _sys_log("Two simultaneous crises detected. Agents mobilising...", "warning")
+    all_logs.append(log)
+    await emit_logs([log])
+
+    # --- Act 2: Aura detects the spike ---
+    forecast = db.query(DemandForecast).join(Part).filter(Part.part_id == "FL-001-T").first()
+    if not forecast:
+        return {"error": "No forecast found for FL-001-T"}
+
+    spiked_qty = int(forecast.forecast_qty * 5.0)
+    aura_result = detect_demand_spike(db, "FL-001-T", spiked_qty)
+    all_logs.extend(aura_result["logs"])
+    await emit_logs(aura_result["logs"])
+
+    # --- Act 3: Core-Guard runs MRP — will find CH-101 shortage AND no primary supplier ---
+    mrp_result = calculate_net_requirements(db, "FL-001-T", spiked_qty)
+    all_logs.extend(mrp_result["logs"])
+    await emit_logs(mrp_result["logs"])
+
+    # --- Act 4: For BUY_ORDERs involving AluForge, reroute to best alternate ---
+    buy_orders = [a for a in mrp_result["actions"] if a["type"] == "BUY_ORDER"]
+    rerouted_orders = []
+    for order in buy_orders:
+        part = db.query(Part).filter(Part.part_id == order["part_id"]).first()
+        if part and part.supplier and not part.supplier.is_active:
+            # Primary supplier offline — find alternate
+            alternate = (
+                db.query(Supplier)
+                .filter(Supplier.id != part.supplier_id, Supplier.is_active == 1)
+                .order_by(Supplier.reliability_score.desc())
+                .first()
+            )
+            if alternate:
+                reroute_log = AgentLog(
+                    agent="Core-Guard",
+                    message=f"Primary supplier {part.supplier.name} OFFLINE. Rerouting {order['part_id']} order to {alternate.name} (reliability: {alternate.reliability_score}).",
+                    log_type="warning",
+                )
+                db.add(reroute_log)
+                db.flush()
+                reroute_dict = {"timestamp": datetime.now(timezone.utc).isoformat(), "agent": "Core-Guard", "message": reroute_log.message, "type": "warning"}
+                all_logs.append(reroute_dict)
+                await emit_logs([reroute_dict])
+                order["supplier_id"] = alternate.id
+                order["supplier_name"] = alternate.name
+        rerouted_orders.append(order)
+
+    # --- Act 5: Ghost-Writer handles all emergency POs ---
+    ghost_result = {"purchase_orders": [], "logs": []}
+    if rerouted_orders:
+        ghost_result = process_buy_orders(db, rerouted_orders)
+        all_logs.extend(ghost_result["logs"])
+        await emit_logs(ghost_result["logs"])
+
+    summary = _sys_log(
+        f"Cascade failure contained: {len(mrp_result['shortages'])} shortage(s) resolved, "
+        f"{len(ghost_result['purchase_orders'])} PO(s) issued across alternate suppliers.",
+        "success",
+    )
+    all_logs.append(summary)
+    await emit_logs([summary])
+
+    return {
+        "status": "simulation_complete",
+        "scenario": "CASCADE_FAILURE",
+        "shortages": mrp_result["shortages"],
+        "procurement": ghost_result["purchase_orders"],
+        "logs": all_logs,
+    }
+
+
+@app.post("/api/simulate/constitution-breach")
+async def simulate_constitution_breach(
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """
+    Scenario E: Constitution Breach — force a PO that exceeds the $5,000 spend limit.
+    Ghost-Writer must block it and flag PENDING_APPROVAL. Human intervention required.
+    Demonstrates the hard-coded financial guardrail cannot be bypassed by agents.
+    """
+    from datetime import datetime, timezone
+    all_logs: list[dict[str, str]] = []
+
+    def _sys_log(msg: str, log_type: str = "info") -> dict:
+        entry = AgentLog(agent="System", message=msg, log_type=log_type)
+        db.add(entry)
+        db.flush()
+        return {"timestamp": datetime.now(timezone.utc).isoformat(), "agent": "System", "message": msg, "type": log_type}
+
+    log = _sys_log("CONSTITUTION BREACH TEST: Simulating 800% demand spike to force a PO exceeding the $5,000 financial guardrail.", "warning")
+    all_logs.append(log)
+    await emit_logs([log])
+
+    # 8x spike on FL-001-T — forces massive CH-101 buy that blows the budget
+    forecast = db.query(DemandForecast).join(Part).filter(Part.part_id == "FL-001-T").first()
+    if not forecast:
+        return {"error": "No forecast found for FL-001-T"}
+
+    spiked_qty = int(forecast.forecast_qty * 8.0)
+
+    aura_result = detect_demand_spike(db, "FL-001-T", spiked_qty)
+    all_logs.extend(aura_result["logs"])
+    await emit_logs(aura_result["logs"])
+
+    mrp_result = calculate_net_requirements(db, "FL-001-T", spiked_qty)
+    all_logs.extend(mrp_result["logs"])
+    await emit_logs(mrp_result["logs"])
+
+    buy_orders = [a for a in mrp_result["actions"] if a["type"] == "BUY_ORDER"]
+
+    log = _sys_log(
+        f"Core-Guard generated {len(buy_orders)} BUY_ORDER(s). Forwarding to Ghost-Writer for cost validation...",
+        "info",
+    )
+    all_logs.append(log)
+    await emit_logs([log])
+
+    ghost_result = {"purchase_orders": [], "logs": []}
+    if buy_orders:
+        ghost_result = process_buy_orders(db, buy_orders)
+        all_logs.extend(ghost_result["logs"])
+        await emit_logs(ghost_result["logs"])
+
+    # Identify blocked orders
+    blocked = [po for po in ghost_result["purchase_orders"] if po["status"] == "PENDING_APPROVAL"]
+    approved = [po for po in ghost_result["purchase_orders"] if po["status"] == "APPROVED"]
+
+    if blocked:
+        log = _sys_log(
+            f"CONSTITUTION ENFORCED: {len(blocked)} PO(s) blocked — total spend exceeds $5,000 limit. "
+            f"Human approval required before funds can be committed. {len(approved)} PO(s) auto-approved.",
+            "error",
+        )
+    else:
+        log = _sys_log("All POs within budget — constitution not breached at this spike level.", "success")
+    all_logs.append(log)
+    await emit_logs([log])
+
+    db.commit()
+
+    return {
+        "status": "simulation_complete",
+        "scenario": "CONSTITUTION_BREACH",
+        "blocked_pos": blocked,
+        "approved_pos": approved,
+        "logs": all_logs,
+    }
+
+
+@app.post("/api/simulate/full-blackout")
+async def simulate_full_blackout(
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """
+    Scenario F: Full Blackout — ALL suppliers for CH-101 go offline.
+    Core-Guard exhausts every option and raises a CRITICAL alert.
+    No PO can be generated. Human escalation required.
+    """
+    from datetime import datetime, timezone
+    all_logs: list[dict[str, str]] = []
+
+    def _sys_log(msg: str, log_type: str = "info") -> dict:
+        entry = AgentLog(agent="System", message=msg, log_type=log_type)
+        db.add(entry)
+        db.flush()
+        return {"timestamp": datetime.now(timezone.utc).isoformat(), "agent": "System", "message": msg, "type": log_type}
+
+    log = _sys_log("FULL BLACKOUT INITIATED: Simulating catastrophic multi-supplier failure for CH-101.", "error")
+    all_logs.append(log)
+    await emit_logs([log])
+
+    # Take ALL suppliers offline
+    all_suppliers = db.query(Supplier).all()
+    for s in all_suppliers:
+        s.is_active = 0
+    db.flush()
+
+    log = _sys_log(f"BLACKOUT: All {len(all_suppliers)} suppliers are now OFFLINE. No procurement path exists.", "error")
+    all_logs.append(log)
+    await emit_logs([log])
+
+    # Now trigger a demand spike — agents will find no way out
+    forecast = db.query(DemandForecast).join(Part).filter(Part.part_id == "FL-001-T").first()
+    if not forecast:
+        return {"error": "No forecast found for FL-001-T"}
+
+    spiked_qty = int(forecast.forecast_qty * 4.0)
+    aura_result = detect_demand_spike(db, "FL-001-T", spiked_qty)
+    all_logs.extend(aura_result["logs"])
+    await emit_logs(aura_result["logs"])
+
+    mrp_result = calculate_net_requirements(db, "FL-001-T", spiked_qty)
+    all_logs.extend(mrp_result["logs"])
+    await emit_logs(mrp_result["logs"])
+
+    # Try to source — every alternate will fail
+    buy_orders = [a for a in mrp_result["actions"] if a["type"] == "BUY_ORDER"]
+
+    for order in buy_orders:
+        log = _sys_log(
+            f"Core-Guard attempting to source {order['quantity']}x {order['part_id']}... scanning {len(all_suppliers)} suppliers.",
+            "warning",
+        )
+        all_logs.append(log)
+        await emit_logs([log])
+
+        # Simulate checking each supplier and finding none active
+        for supplier in all_suppliers[:3]:  # Show first 3 attempts for drama
+            log = _sys_log(f"  Checking {supplier.name}... STATUS: OFFLINE.", "error")
+            all_logs.append(log)
+            await emit_logs([log])
+
+        log = _sys_log(
+            f"CRITICAL: No active supplier found for {order['part_id']}. "
+            f"All {len(all_suppliers)} vendors offline. Cannot generate PO.",
+            "error",
+        )
+        all_logs.append(log)
+        await emit_logs([log])
+
+    # Final escalation alert
+    log = _sys_log(
+        "SYSTEM HALT: Core-Guard has exhausted all procurement options. "
+        "Manual intervention required. Escalating to COO.",
+        "error",
+    )
+    all_logs.append(log)
+    await emit_logs([log])
+
+    log = _sys_log(
+        f"Production of FL-001-T at risk. Estimated stock-out in {(500 // max(spiked_qty // 30, 1))} days at current demand.",
+        "error",
+    )
+    all_logs.append(log)
+    await emit_logs([log])
+
+    db.commit()
+
+    return {
+        "status": "simulation_complete",
+        "scenario": "FULL_BLACKOUT",
+        "suppliers_offline": len(all_suppliers),
+        "unresolved_shortages": mrp_result["shortages"],
+        "logs": all_logs,
+    }
+
+
+@app.post("/api/simulate/reset")
+async def simulate_reset(
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """Reset the database to a clean FL-001 state for fresh demos."""
+    from database.models import Base, QualityInspection
+    from database.connection import engine
+    from seed import seed
+
+    # Drop and recreate all tables
+    Base.metadata.drop_all(bind=engine)
+    Base.metadata.create_all(bind=engine)
+    db.close()
+
+    # Re-seed
+    seed()
+
+    return {"status": "reset_complete", "message": "Database wiped and re-seeded with FL-001 data."}
 
 
 # --- ASGI entry point ---

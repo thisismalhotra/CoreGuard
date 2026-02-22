@@ -1,8 +1,11 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Trash2, Clock } from "lucide-react";
 import type { AgentLog } from "@/lib/socket";
+import { api } from "@/lib/api";
 
 const LOG_TYPE_STYLES: Record<string, string> = {
   info: "text-blue-400",
@@ -19,40 +22,106 @@ const AGENT_COLORS: Record<string, string> = {
   System: "bg-gray-600",
 };
 
-export function LiveLogs({ logs }: { logs: AgentLog[] }) {
+const DELAY_OPTIONS = [
+  { value: 1, label: "1s" },
+  { value: 2, label: "2s" },
+  { value: 3, label: "3s" },
+];
+
+export function LiveLogs({
+  logs,
+  onClear,
+}: {
+  logs: AgentLog[];
+  onClear: () => void;
+}) {
   const bottomRef = useRef<HTMLDivElement>(null);
+  const [delay, setDelay] = useState(2);
+
+  // Fetch current delay from backend on mount
+  useEffect(() => {
+    api.getLogDelay().then((res) => setDelay(res.delay)).catch(() => {});
+  }, []);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [logs]);
 
+  const handleDelayChange = async (newDelay: number) => {
+    setDelay(newDelay);
+    try {
+      await api.setLogDelay(newDelay);
+    } catch {
+      // Revert on failure
+      setDelay(delay);
+    }
+  };
+
   return (
-    <div className="bg-gray-950 rounded-lg border border-gray-800 font-mono text-sm h-[500px] overflow-y-auto p-4">
-      {logs.length === 0 && (
-        <p className="text-gray-500 animate-pulse">
-          Awaiting agent activity...
-        </p>
-      )}
-      {logs.map((log, i) => {
-        const time = log.timestamp
-          ? new Date(log.timestamp).toLocaleTimeString()
-          : "--:--:--";
-        return (
-          <div key={i} className="flex items-start gap-2 mb-1.5 leading-relaxed">
-            <span className="text-gray-600 shrink-0 w-[72px]">{time}</span>
-            <Badge
-              variant="secondary"
-              className={`${AGENT_COLORS[log.agent] || "bg-gray-600"} text-white text-[10px] shrink-0 w-[90px] justify-center`}
+    <div className="space-y-2">
+      {/* Toolbar */}
+      <div className="flex items-center justify-between">
+        <span className="text-xs text-gray-500">
+          {logs.length} {logs.length === 1 ? "entry" : "entries"}
+        </span>
+        <div className="flex items-center gap-3">
+          {/* Log delay selector */}
+          <div className="flex items-center gap-1.5">
+            <Clock className="h-3 w-3 text-gray-500" />
+            <span className="text-xs text-gray-500">Delay:</span>
+            <select
+              value={delay}
+              onChange={(e) => handleDelayChange(Number(e.target.value))}
+              className="bg-gray-900 border border-gray-700 text-gray-300 text-xs rounded px-1.5 py-0.5 h-7 focus:outline-none focus:border-blue-500 cursor-pointer"
             >
-              {log.agent}
-            </Badge>
-            <span className={LOG_TYPE_STYLES[log.type] || "text-gray-300"}>
-              {log.message}
-            </span>
+              {DELAY_OPTIONS.map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </option>
+              ))}
+            </select>
           </div>
-        );
-      })}
-      <div ref={bottomRef} />
+          <Button
+            variant="outline"
+            size="sm"
+            className="border-gray-700 text-gray-400 hover:text-white hover:border-gray-500 gap-1.5 text-xs h-7"
+            onClick={onClear}
+            disabled={logs.length === 0}
+          >
+            <Trash2 className="h-3 w-3" />
+            Clear Logs
+          </Button>
+        </div>
+      </div>
+
+      {/* Log terminal */}
+      <div className="bg-gray-950 rounded-lg border border-gray-800 font-mono text-sm h-[500px] overflow-y-auto p-4">
+        {logs.length === 0 && (
+          <p className="text-gray-500 animate-pulse">
+            Awaiting agent activity...
+          </p>
+        )}
+        {logs.map((log, i) => {
+          const time = log.timestamp
+            ? new Date(log.timestamp).toLocaleTimeString()
+            : "--:--:--";
+          return (
+            <div key={i} className="flex items-start gap-2 mb-1.5 leading-relaxed">
+              <span className="text-gray-600 shrink-0 w-[72px]">{time}</span>
+              <Badge
+                variant="secondary"
+                className={`${AGENT_COLORS[log.agent] || "bg-gray-600"} text-white text-[10px] shrink-0 w-[90px] justify-center`}
+              >
+                {log.agent}
+              </Badge>
+              <span className={LOG_TYPE_STYLES[log.type] || "text-gray-300"}>
+                {log.message}
+              </span>
+            </div>
+          );
+        })}
+        <div ref={bottomRef} />
+      </div>
     </div>
   );
 }

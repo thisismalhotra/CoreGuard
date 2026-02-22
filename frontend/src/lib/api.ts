@@ -56,4 +56,21 @@ export const api = {
       `/api/simulate/supply-shock?supplier_name=${supplier}`,
       { method: "POST" }
     ),
+  simulateQualityFail: (partId = "CH-101", batchSize = 150) =>
+    fetchJSON<Record<string, unknown>>(
+      `/api/simulate/quality-fail?part_id=${partId}&batch_size=${batchSize}`,
+      { method: "POST" }
+    ),
+  simulateCascadeFailure: () =>
+    fetchJSON<Record<string, unknown>>("/api/simulate/cascade-failure", { method: "POST" }),
+  simulateConstitutionBreach: () =>
+    fetchJSON<Record<string, unknown>>("/api/simulate/constitution-breach", { method: "POST" }),
+  simulateFullBlackout: () =>
+    fetchJSON<Record<string, unknown>>("/api/simulate/full-blackout", { method: "POST" }),
+  resetSimulation: () =>
+    fetchJSON<Record<string, unknown>>("/api/simulate/reset", { method: "POST" }),
+  getLogDelay: () =>
+    fetchJSON<{ delay: number }>("/api/settings/log-delay"),
+  setLogDelay: (delay: number) =>
+    fetchJSON<{ delay: number }>(`/api/settings/log-delay?delay=${delay}`, { method: "POST" }),
 };
