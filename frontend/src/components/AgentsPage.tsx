@@ -10,6 +10,7 @@ import {
   Shield,
   FileText,
   Eye,
+  GitBranch,
   ArrowRight,
   AlertTriangle,
   ChevronDown,
@@ -21,6 +22,7 @@ const API_BASE = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
 
 const ICON_MAP: Record<string, React.ReactNode> = {
   Radio: <Radio className="h-6 w-6" />,
+  GitBranch: <GitBranch className="h-6 w-6" />,
   Shield: <Shield className="h-6 w-6" />,
   FileText: <FileText className="h-6 w-6" />,
   Eye: <Eye className="h-6 w-6" />,
@@ -28,6 +30,7 @@ const ICON_MAP: Record<string, React.ReactNode> = {
 
 const COLOR_MAP: Record<string, { bg: string; border: string; badge: string; text: string }> = {
   purple: { bg: "bg-purple-950/30", border: "border-purple-800/50", badge: "bg-purple-600", text: "text-purple-400" },
+  cyan: { bg: "bg-cyan-950/30", border: "border-cyan-800/50", badge: "bg-cyan-600", text: "text-cyan-400" },
   blue: { bg: "bg-blue-950/30", border: "border-blue-800/50", badge: "bg-blue-600", text: "text-blue-400" },
   emerald: { bg: "bg-emerald-950/30", border: "border-emerald-800/50", badge: "bg-emerald-600", text: "text-emerald-400" },
   orange: { bg: "bg-orange-950/30", border: "border-orange-800/50", badge: "bg-orange-600", text: "text-orange-400" },

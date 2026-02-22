@@ -20,7 +20,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from database.connection import init_db, SessionLocal
 from database.models import (
     Supplier, Part, Inventory, BOMEntry, DemandForecast,
-    PartCategory,
+    PartCategory, CriticalityLevel,
 )
 
 
@@ -75,11 +75,25 @@ def seed() -> None:
     # 2. PARTS (FL-001 Ground Truth — CLAUDE.md §Data Model)
     # ---------------------------------------------------------------
     parts_data = [
-        {"part_id": "FL-001-T", "description": "Tactical Flashlight", "category": PartCategory.FINISHED_GOOD, "unit_cost": 0.0, "supplier_name": None},
-        {"part_id": "FL-001-S", "description": "Standard Flashlight", "category": PartCategory.FINISHED_GOOD, "unit_cost": 0.0, "supplier_name": None},
-        {"part_id": "CH-101", "description": "Modular Chassis", "category": PartCategory.COMMON_CORE, "unit_cost": 12.50, "supplier_name": "AluForge"},
-        {"part_id": "SW-303", "description": "Switch Assembly", "category": PartCategory.COMMON_CORE, "unit_cost": 4.75, "supplier_name": "MicroConnect"},
-        {"part_id": "LNS-505", "description": "Optic Lens", "category": PartCategory.COMMON_CORE, "unit_cost": 8.30, "supplier_name": "Precision Optic"},
+        # Finished Goods — criticality is HIGH because they're the end product
+        {"part_id": "FL-001-T", "description": "Tactical Flashlight", "category": PartCategory.FINISHED_GOOD,
+         "unit_cost": 0.0, "supplier_name": None,
+         "criticality": CriticalityLevel.HIGH, "lead_time_sensitivity": 0.9, "substitute_pool_size": 0},
+        {"part_id": "FL-001-S", "description": "Standard Flashlight", "category": PartCategory.FINISHED_GOOD,
+         "unit_cost": 0.0, "supplier_name": None,
+         "criticality": CriticalityLevel.MEDIUM, "lead_time_sensitivity": 0.5, "substitute_pool_size": 0},
+        # CH-101 Chassis — CRITICAL: structural, long lead, only 4 alternate aluminum suppliers
+        {"part_id": "CH-101", "description": "Modular Chassis", "category": PartCategory.COMMON_CORE,
+         "unit_cost": 12.50, "supplier_name": "AluForge",
+         "criticality": CriticalityLevel.CRITICAL, "lead_time_sensitivity": 0.95, "substitute_pool_size": 4},
+        # SW-303 Switch — MEDIUM: many electronic switch suppliers, short lead time
+        {"part_id": "SW-303", "description": "Switch Assembly", "category": PartCategory.COMMON_CORE,
+         "unit_cost": 4.75, "supplier_name": "MicroConnect",
+         "criticality": CriticalityLevel.MEDIUM, "lead_time_sensitivity": 0.4, "substitute_pool_size": 6},
+        # LNS-505 Lens — HIGH: precision optics, few qualified suppliers
+        {"part_id": "LNS-505", "description": "Optic Lens", "category": PartCategory.COMMON_CORE,
+         "unit_cost": 8.30, "supplier_name": "Precision Optic",
+         "criticality": CriticalityLevel.HIGH, "lead_time_sensitivity": 0.8, "substitute_pool_size": 3},
     ]
 
     parts = {}

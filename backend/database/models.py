@@ -58,6 +58,13 @@ class Supplier(Base):
         return f"<Supplier {self.name}>"
 
 
+class CriticalityLevel(str, enum.Enum):
+    CRITICAL = "CRITICAL"        # Production halts without this part
+    HIGH = "HIGH"                # Significant impact, limited substitutes
+    MEDIUM = "MEDIUM"            # Moderate impact, substitutes available
+    LOW = "LOW"                  # Minimal impact, easily sourced
+
+
 class Part(Base):
     __tablename__ = "parts"
 
@@ -67,6 +74,11 @@ class Part(Base):
     category = Column(SAEnum(PartCategory), nullable=False)
     unit_cost = Column(Float, nullable=False, default=0.0)
     supplier_id = Column(Integer, ForeignKey("suppliers.id"), nullable=True)  # Nullable for Finished Goods
+
+    # Part profile fields — used by Dispatcher and Core-Guard for prioritisation
+    criticality = Column(SAEnum(CriticalityLevel), nullable=False, default=CriticalityLevel.MEDIUM)
+    lead_time_sensitivity = Column(Float, nullable=False, default=0.5)  # 0.0 (tolerant) to 1.0 (urgent)
+    substitute_pool_size = Column(Integer, nullable=False, default=0)   # How many alternate suppliers exist
 
     supplier = relationship("Supplier", back_populates="parts")
     inventory = relationship("Inventory", back_populates="part", uselist=False)

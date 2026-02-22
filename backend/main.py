@@ -22,6 +22,7 @@ from database.models import (
     BOMEntry, QualityInspection,
 )
 from agents.aura import detect_demand_spike
+from agents.dispatcher import triage_demand_spike
 from agents.core_guard import calculate_net_requirements
 from agents.ghost_writer import process_buy_orders
 from agents.eagle_eye import inspect_batch
@@ -205,7 +206,7 @@ def get_agents() -> list[dict[str, Any]]:
             "trigger": "Incoming demand data exceeds forecast by 20%+ (SPIKE_THRESHOLD = 1.2x)",
             "inputs": ["SKU identifier", "New actual demand quantity", "Demand forecast table"],
             "outputs": ["DEMAND_SPIKE event", "Spike multiplier", "Glass Box logs"],
-            "downstream": "Core-Guard",
+            "downstream": "Dispatcher",
             "constitution": None,
             "rules": [
                 "Stateless — reads DB state, never caches",
@@ -218,20 +219,43 @@ def get_agents() -> list[dict[str, Any]]:
             "source_file": "agents/aura.py",
         },
         {
+            "name": "Dispatcher",
+            "role": "Triage & Prioritisation Agent",
+            "description": "Sits between Aura and Core-Guard. Analyses BOM components, scores each by criticality, lead-time sensitivity, and shortage severity, then hands Core-Guard a prioritised processing queue.",
+            "trigger": "DEMAND_SPIKE event from Aura",
+            "inputs": ["SKU identifier", "Demand quantity", "BOM table", "Part profiles (criticality, lead_time_sensitivity)"],
+            "outputs": ["Prioritised component queue", "Risk assessment", "Glass Box logs"],
+            "downstream": "Core-Guard",
+            "constitution": None,
+            "rules": [
+                "Stateless — reads DB state, never caches",
+                "Priority score = criticality_weight + (lead_time_sensitivity × 30) + (gap_severity × 20)",
+                "CRITICAL parts: weight 100, HIGH: 75, MEDIUM: 50, LOW: 25",
+                "Components sorted by priority score descending — highest first",
+                "Flags CRITICAL components for expedited processing",
+                "Provides risk assessment: total components, at-risk count, critical count",
+            ],
+            "color": "cyan",
+            "icon": "GitBranch",
+            "source_file": "agents/dispatcher.py",
+        },
+        {
             "name": "Core-Guard",
             "role": "MRP Logic Agent",
-            "description": "The brain of the supply chain. Performs BOM explosion, calculates net material requirements using deterministic math, and decides whether to reallocate from substitute SKUs or issue buy orders.",
-            "trigger": "DEMAND_SPIKE event from Aura, or direct invocation from simulation endpoints",
-            "inputs": ["SKU identifier", "Demand quantity", "BOM table", "Inventory table"],
-            "outputs": ["Shortage analysis", "REALLOCATE actions", "BUY_ORDER actions", "Glass Box logs"],
+            "description": "The brain of the supply chain. Performs BOM explosion, calculates net material requirements using deterministic math, and applies criticality-based routing rules to decide procurement strategy.",
+            "trigger": "Prioritised queue from Dispatcher, or direct invocation from simulation endpoints",
+            "inputs": ["SKU identifier", "Demand quantity", "BOM table", "Inventory table", "Part criticality profiles"],
+            "outputs": ["Shortage analysis", "REALLOCATE actions", "BUY_ORDER actions (with expedite flags)", "Glass Box logs"],
             "downstream": "Ghost-Writer",
             "constitution": None,
             "rules": [
                 "Stateless — operates on DB state passed in",
                 "All arithmetic done in Python (Rule B: never ask LLM to calculate)",
                 "Net Requirement = (Demand × BOM qty_per) - Available Inventory",
-                "Attempts REALLOCATE from substitute SKUs before issuing BUY_ORDER",
-                "Only reallocates from lower-priority variants (FL-001-S before FL-001-T)",
+                "CRITICAL parts: 1.5x buffer, reallocation BLOCKED, EXPEDITED procurement",
+                "HIGH parts: 1.25x buffer, reallocation allowed (with safeguards), EXPEDITED",
+                "MEDIUM parts: exact gap, standard reallocation, normal procurement",
+                "LOW parts: exact gap, free reallocation, no rush",
             ],
             "color": "blue",
             "icon": "Shield",
@@ -305,6 +329,8 @@ def db_parts(db: Session = Depends(get_db)) -> list[dict[str, Any]]:
     return [
         {"id": p.id, "part_id": p.part_id, "description": p.description,
          "category": p.category.value, "unit_cost": p.unit_cost,
+         "criticality": p.criticality.value, "lead_time_sensitivity": p.lead_time_sensitivity,
+         "substitute_pool_size": p.substitute_pool_size,
          "supplier": p.supplier.name if p.supplier else None}
         for p in rows
     ]
@@ -401,7 +427,7 @@ async def simulate_demand_spike(
     """
     Scenario A: Simulate a demand spike.
 
-    Full agent chain: Aura (detect) → Core-Guard (MRP) → Ghost-Writer (PO).
+    Full agent chain: Aura → Dispatcher → Core-Guard → Ghost-Writer.
     All logs are streamed to the dashboard via Socket.io in real-time.
     """
     all_logs: list[dict[str, str]] = []
@@ -425,12 +451,17 @@ async def simulate_demand_spike(
     if not aura_result["spike_detected"]:
         return {"status": "no_spike", "aura": aura_result, "logs": all_logs}
 
-    # --- Step 2: Core-Guard calculates net requirements ---
+    # --- Step 2: Dispatcher triages components by criticality ---
+    dispatch_result = triage_demand_spike(db, sku, spiked_qty)
+    all_logs.extend(dispatch_result["logs"])
+    await emit_logs(dispatch_result["logs"])
+
+    # --- Step 3: Core-Guard calculates net requirements (now criticality-aware) ---
     mrp_result = calculate_net_requirements(db, sku, spiked_qty)
     all_logs.extend(mrp_result["logs"])
     await emit_logs(mrp_result["logs"])
 
-    # --- Step 3: Ghost-Writer processes buy orders ---
+    # --- Step 4: Ghost-Writer processes buy orders ---
     buy_orders = [a for a in mrp_result["actions"] if a["type"] == "BUY_ORDER"]
 
     ghost_result = {"purchase_orders": [], "logs": []}
@@ -742,6 +773,11 @@ async def simulate_cascade_failure(
     all_logs.extend(aura_result["logs"])
     await emit_logs(aura_result["logs"])
 
+    # --- Act 2.5: Dispatcher triages under compounding stress ---
+    dispatch_result = triage_demand_spike(db, "FL-001-T", spiked_qty)
+    all_logs.extend(dispatch_result["logs"])
+    await emit_logs(dispatch_result["logs"])
+
     # --- Act 3: Core-Guard runs MRP — will find CH-101 shortage AND no primary supplier ---
     mrp_result = calculate_net_requirements(db, "FL-001-T", spiked_qty)
     all_logs.extend(mrp_result["logs"])
@@ -832,6 +868,10 @@ async def simulate_constitution_breach(
     all_logs.extend(aura_result["logs"])
     await emit_logs(aura_result["logs"])
 
+    dispatch_result = triage_demand_spike(db, "FL-001-T", spiked_qty)
+    all_logs.extend(dispatch_result["logs"])
+    await emit_logs(dispatch_result["logs"])
+
     mrp_result = calculate_net_requirements(db, "FL-001-T", spiked_qty)
     all_logs.extend(mrp_result["logs"])
     await emit_logs(mrp_result["logs"])
@@ -918,6 +958,10 @@ async def simulate_full_blackout(
     aura_result = detect_demand_spike(db, "FL-001-T", spiked_qty)
     all_logs.extend(aura_result["logs"])
     await emit_logs(aura_result["logs"])
+
+    dispatch_result = triage_demand_spike(db, "FL-001-T", spiked_qty)
+    all_logs.extend(dispatch_result["logs"])
+    await emit_logs(dispatch_result["logs"])
 
     mrp_result = calculate_net_requirements(db, "FL-001-T", spiked_qty)
     all_logs.extend(mrp_result["logs"])
