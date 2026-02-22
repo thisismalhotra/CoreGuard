@@ -49,8 +49,10 @@ app.include_router(kpis.router)
 app.include_router(agents_meta.router)
 app.include_router(simulations.router)
 
-# --- Inject Socket.io into the simulation router ---
-simulations.init_sio(sio, kpis.get_log_delay)
+# --- Store Socket.io and settings on app.state for thread-safe access ---
+app.state.sio = sio
+app.state.log_delay_seconds = 2.0
+simulations.init_sio(app.state)
 
 # --- Mount Socket.io on the ASGI app ---
 socket_app = socketio.ASGIApp(sio, other_asgi_app=app)

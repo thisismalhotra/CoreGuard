@@ -9,7 +9,7 @@ import asyncio
 from datetime import datetime, timezone
 from typing import Any
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from database.connection import get_db, engine
@@ -24,36 +24,38 @@ from agents.eagle_eye import inspect_batch
 
 router = APIRouter(prefix="/api/simulate", tags=["simulations"])
 
-# These will be set by main.py after Socket.io is initialised
-_sio = None
-_get_log_delay = None
+# Socket.io and log delay are stored on app.state by main.py.
+# These module-level references are set once at startup via init_sio().
+_app_state = None
 
 
-def init_sio(sio, get_log_delay_fn):
-    """Called by main.py to inject the Socket.io server and log delay getter."""
-    global _sio, _get_log_delay
-    _sio = sio
-    _get_log_delay = get_log_delay_fn
+def init_sio(app_state):
+    """Called by main.py to store the app.state reference for Socket.io access."""
+    global _app_state
+    _app_state = app_state
 
 
 async def emit_logs(logs: list[dict[str, str]]) -> None:
     """Broadcast Glass Box logs to all connected dashboard clients."""
-    if _sio is None:
+    if _app_state is None:
         return
-    delay = _get_log_delay() if _get_log_delay else 2.0
+    sio = getattr(_app_state, "sio", None)
+    if sio is None:
+        return
+    delay = getattr(_app_state, "log_delay_seconds", 2.0)
     for log in logs:
-        await _sio.emit("agent_log", log)
+        await sio.emit("agent_log", log)
         await asyncio.sleep(delay)
 
 
-def _sys_log(db: Session, msg: str, log_type: str = "info") -> dict:
-    """Create a System-level log entry."""
-    entry = AgentLog(agent="System", message=msg, log_type=log_type)
+def _sys_log(db: Session, msg: str, log_type: str = "info", agent: str = "System") -> dict:
+    """Create a log entry. Agent name is consistent between DB record and emitted dict."""
+    entry = AgentLog(agent=agent, message=msg, log_type=log_type)
     db.add(entry)
     db.flush()
     return {
         "timestamp": datetime.now(timezone.utc).isoformat(),
-        "agent": "System",
+        "agent": agent,
         "message": msg,
         "type": log_type,
     }
@@ -82,7 +84,7 @@ async def simulate_demand_spike(
         .first()
     )
     if not forecast:
-        return {"error": f"No forecast found for {sku}"}
+        raise HTTPException(status_code=404, detail=f"No forecast found for {sku}")
 
     spiked_qty = int(forecast.forecast_qty * multiplier)
 
@@ -153,7 +155,7 @@ async def simulate_supply_shock(
 
     supplier = db.query(Supplier).filter(Supplier.name == supplier_name).first()
     if not supplier:
-        return {"error": f"Supplier '{supplier_name}' not found"}
+        raise HTTPException(status_code=404, detail=f"Supplier '{supplier_name}' not found")
 
     # Step 1: Disable the supplier
     supplier.is_active = 0
@@ -172,13 +174,11 @@ async def simulate_supply_shock(
         if not inv:
             continue
 
-        log = _sys_log(db, f"Assessing impact: {part.part_id} ({part.description}) — primary supplier {supplier_name} offline.", "warning")
-        log["agent"] = "Core-Guard"
+        log = _sys_log(db, f"Assessing impact: {part.part_id} ({part.description}) — primary supplier {supplier_name} offline.", "warning", agent="Core-Guard")
         all_logs.append(log)
         await emit_logs([log])
 
-        log = _sys_log(db, f"Inventory check: {part.part_id} — on_hand={inv.on_hand}, safety_stock={inv.safety_stock}, available={inv.available}.", "info")
-        log["agent"] = "Core-Guard"
+        log = _sys_log(db, f"Inventory check: {part.part_id} — on_hand={inv.on_hand}, safety_stock={inv.safety_stock}, available={inv.available}.", "info", agent="Core-Guard")
         all_logs.append(log)
         await emit_logs([log])
 
@@ -192,8 +192,7 @@ async def simulate_supply_shock(
         )
 
         if not alternate:
-            log = _sys_log(db, f"CRITICAL: No alternate suppliers available for {part.part_id}!", "error")
-            log["agent"] = "Core-Guard"
+            log = _sys_log(db, f"CRITICAL: No alternate suppliers available for {part.part_id}!", "error", agent="Core-Guard")
             all_logs.append(log)
             await emit_logs([log])
             continue
@@ -203,8 +202,8 @@ async def simulate_supply_shock(
             f"Switching {part.part_id} to alternate supplier: {alternate.name} "
             f"(reliability: {alternate.reliability_score}, lead time: {alternate.lead_time_days}d).",
             "info",
+            agent="Core-Guard",
         )
-        log["agent"] = "Core-Guard"
         all_logs.append(log)
         await emit_logs([log])
 
@@ -224,8 +223,8 @@ async def simulate_supply_shock(
             f"Emergency BUY_ORDER: {order_qty}x {part.part_id} from {alternate.name} "
             f"@ ${round(order_qty * part.unit_cost, 2):.2f}.",
             "warning",
+            agent="Core-Guard",
         )
-        log["agent"] = "Core-Guard"
         all_logs.append(log)
         await emit_logs([log])
 
@@ -330,7 +329,7 @@ async def simulate_cascade_failure(
     # Act 2: Aura detects the spike
     forecast = db.query(DemandForecast).join(Part).filter(Part.part_id == "FL-001-T").first()
     if not forecast:
-        return {"error": "No forecast found for FL-001-T"}
+        raise HTTPException(status_code=404, detail="No forecast found for FL-001-T")
 
     spiked_qty = int(forecast.forecast_qty * 5.0)
     aura_result = detect_demand_spike(db, "FL-001-T", spiked_qty)
@@ -364,8 +363,8 @@ async def simulate_cascade_failure(
                     db,
                     f"Primary supplier {part.supplier.name} OFFLINE. Rerouting {order['part_id']} order to {alternate.name} (reliability: {alternate.reliability_score}).",
                     "warning",
+                    agent="Core-Guard",
                 )
-                log["agent"] = "Core-Guard"
                 all_logs.append(log)
                 await emit_logs([log])
                 order["supplier_id"] = alternate.id
@@ -419,7 +418,7 @@ async def simulate_constitution_breach(
 
     forecast = db.query(DemandForecast).join(Part).filter(Part.part_id == "FL-001-T").first()
     if not forecast:
-        return {"error": "No forecast found for FL-001-T"}
+        raise HTTPException(status_code=404, detail="No forecast found for FL-001-T")
 
     spiked_qty = int(forecast.forecast_qty * 8.0)
 
@@ -505,7 +504,7 @@ async def simulate_full_blackout(
 
     forecast = db.query(DemandForecast).join(Part).filter(Part.part_id == "FL-001-T").first()
     if not forecast:
-        return {"error": "No forecast found for FL-001-T"}
+        raise HTTPException(status_code=404, detail="No forecast found for FL-001-T")
 
     spiked_qty = int(forecast.forecast_qty * 4.0)
     aura_result = detect_demand_spike(db, "FL-001-T", spiked_qty)

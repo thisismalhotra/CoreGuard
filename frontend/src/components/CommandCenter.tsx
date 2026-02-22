@@ -30,13 +30,16 @@ export function CommandCenter() {
       ]);
       setInventory(inv);
       setKPIs(kpiData);
-      // Merge persisted logs with live ones (avoid duplicates via message check)
+      // Merge persisted logs with live ones (deduplicate via timestamp+agent+message composite key)
       setLogs((prev) => {
-        const existingMessages = new Set(prev.map((l) => l.message));
+        const existingKeys = new Set(
+          prev.map((l) => `${l.timestamp}|${l.agent}|${l.message}`)
+        );
         const newLogs = logData.filter(
-          (l) => !existingMessages.has(l.message)
+          (l) => !existingKeys.has(`${l.timestamp}|${l.agent}|${l.message}`)
         ) as AgentLog[];
-        return [...newLogs, ...prev];
+        // Cap at 1000 entries to prevent unbounded memory growth
+        return [...newLogs, ...prev].slice(0, 1000);
       });
     } catch (err) {
       console.error("Failed to refresh data:", err);
@@ -53,7 +56,8 @@ export function CommandCenter() {
     socket.on("disconnect", () => setConnected(false));
 
     socket.on("agent_log", (log: AgentLog) => {
-      setLogs((prev) => [...prev, log]);
+      // Cap at 1000 entries to prevent unbounded memory growth
+      setLogs((prev) => [...prev, log].slice(-1000));
     });
 
     return () => {

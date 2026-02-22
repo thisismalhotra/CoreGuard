@@ -15,7 +15,7 @@ from datetime import datetime, timezone
 from typing import Any
 from sqlalchemy.orm import Session
 
-from database.models import Part, Inventory, AgentLog, QualityInspection, InspectionResult
+from database.models import Part, AgentLog, QualityInspection, InspectionResult
 
 AGENT_NAME = "Eagle-Eye"
 

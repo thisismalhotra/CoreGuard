@@ -18,7 +18,7 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from database.models import (
-    Part, Inventory, BOMEntry, DemandForecast, AgentLog, CriticalityLevel,
+    Part, BOMEntry, AgentLog, CriticalityLevel,
 )
 
 AGENT_NAME = "Dispatcher"

@@ -2,14 +2,19 @@
 Purchase Order REST endpoints.
 """
 
-from fastapi import APIRouter, Depends
+import uuid
+
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from database.connection import get_db
-from database.models import PurchaseOrder
-from schemas import PurchaseOrderResponse
+from database.models import PurchaseOrder, Part, Supplier, OrderStatus
+from schemas import PurchaseOrderResponse, CreatePurchaseOrderRequest
 
 router = APIRouter(prefix="/api", tags=["orders"])
+
+# Rule C: Financial Constitution — hard-coded, LLM cannot override
+FINANCIAL_CONSTITUTION_MAX_SPEND = 5000.00
 
 
 @router.get("/orders", response_model=list[PurchaseOrderResponse])
@@ -30,3 +35,58 @@ def get_orders(db: Session = Depends(get_db)) -> list[dict]:
         }
         for po in orders
     ]
+
+
+@router.post("/orders", response_model=PurchaseOrderResponse)
+def create_order(
+    body: CreatePurchaseOrderRequest,
+    db: Session = Depends(get_db),
+) -> dict:
+    """
+    Manually create a purchase order.
+
+    Validates part and supplier exist, applies the Financial Constitution
+    ($5,000 auto-approval limit), and persists the PO.
+    """
+    part = db.query(Part).filter(Part.part_id == body.part_id).first()
+    if not part:
+        raise HTTPException(status_code=404, detail=f"Part '{body.part_id}' not found")
+
+    supplier = db.query(Supplier).filter(Supplier.name == body.supplier_name).first()
+    if not supplier:
+        raise HTTPException(status_code=404, detail=f"Supplier '{body.supplier_name}' not found")
+
+    total_cost = round(body.quantity * body.unit_cost, 2)
+
+    # Rule C: Financial Constitution check
+    if total_cost > FINANCIAL_CONSTITUTION_MAX_SPEND:
+        status = OrderStatus.PENDING_APPROVAL
+    else:
+        status = OrderStatus.APPROVED
+
+    po_number = f"PO-{uuid.uuid4().hex[:8].upper()}"
+
+    po = PurchaseOrder(
+        po_number=po_number,
+        part_id=part.id,
+        supplier_id=supplier.id,
+        quantity=body.quantity,
+        unit_cost=body.unit_cost,
+        total_cost=total_cost,
+        status=status,
+        triggered_by="Manual",
+    )
+    db.add(po)
+    db.commit()
+
+    return {
+        "po_number": po_number,
+        "part_id": body.part_id,
+        "supplier": body.supplier_name,
+        "quantity": body.quantity,
+        "unit_cost": body.unit_cost,
+        "total_cost": total_cost,
+        "status": status.value,
+        "created_at": po.created_at.isoformat(),
+        "triggered_by": "Manual",
+    }

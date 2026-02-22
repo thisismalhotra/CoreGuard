@@ -2,7 +2,7 @@
 KPI & Settings REST endpoints.
 """
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from sqlalchemy.orm import Session
 
 from database.connection import get_db
@@ -11,13 +11,10 @@ from schemas import KPIsResponse, LogDelayResponse, GlassBoxLog
 
 router = APIRouter(prefix="/api", tags=["kpis"])
 
-# Configurable log delay (seconds between each log line in simulations)
-LOG_DELAY_SECONDS: float = 2.0
 
-
-def get_log_delay() -> float:
-    """Return the current log delay value (used by simulation routers)."""
-    return LOG_DELAY_SECONDS
+def get_log_delay(request: Request) -> float:
+    """Return the current log delay from app.state (thread-safe)."""
+    return getattr(request.app.state, "log_delay_seconds", 2.0)
 
 
 @router.get("/kpis", response_model=KPIsResponse)
@@ -60,15 +57,14 @@ def get_logs(limit: int = 50, db: Session = Depends(get_db)) -> list[dict]:
 
 
 @router.get("/settings/log-delay", response_model=LogDelayResponse)
-def get_log_delay_setting() -> dict:
+def get_log_delay_setting(request: Request) -> dict:
     """Return the current log delay setting."""
-    return {"delay": LOG_DELAY_SECONDS}
+    return {"delay": getattr(request.app.state, "log_delay_seconds", 2.0)}
 
 
 @router.post("/settings/log-delay", response_model=LogDelayResponse)
-def set_log_delay_setting(delay: float = 2.0) -> dict:
+def set_log_delay_setting(request: Request, delay: float = 2.0) -> dict:
     """Update the delay (in seconds) between each log line during simulations."""
-    global LOG_DELAY_SECONDS
-    # Clamp to reasonable range
-    LOG_DELAY_SECONDS = max(0.5, min(delay, 5.0))
-    return {"delay": LOG_DELAY_SECONDS}
+    # Clamp to reasonable range and store on app.state (thread-safe for single worker)
+    request.app.state.log_delay_seconds = max(0.5, min(delay, 5.0))
+    return {"delay": request.app.state.log_delay_seconds}

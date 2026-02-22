@@ -11,11 +11,11 @@ Stateless: operates on DB state passed in. Emits structured logs for Glass Box v
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import Any, Optional
+from typing import Any
 from sqlalchemy.orm import Session
 
 from database.models import (
-    Part, Inventory, BOMEntry, DemandForecast, AgentLog, PartCategory, CriticalityLevel,
+    Part, BOMEntry, AgentLog, CriticalityLevel,
 )
 
 AGENT_NAME = "Core-Guard"
@@ -150,8 +150,32 @@ def calculate_net_requirements(
 
         if reallocation:
             actions.append(reallocation)
+            remaining = reallocation.get("remaining", 0)
+            if remaining > 0:
+                # Partial reallocation — issue a BUY_ORDER for only the uncovered gap
+                buy_qty = int(remaining * routing["safety_stock_multiplier"])
+                buy_order = {
+                    "type": "BUY_ORDER",
+                    "part_id": component.part_id,
+                    "quantity": buy_qty,
+                    "unit_cost": component.unit_cost,
+                    "total_cost": round(buy_qty * component.unit_cost, 2),
+                    "supplier_id": component.supplier_id,
+                    "supplier_name": component.supplier.name if component.supplier else "Unknown",
+                    "triggered_by": AGENT_NAME,
+                    "expedite": routing["expedite"],
+                    "criticality": component.criticality.value,
+                }
+                actions.append(buy_order)
+                logs.append(_log(
+                    db,
+                    f"Issuing BUY_ORDER for remaining gap: {buy_qty}x {component.part_id} from {buy_order['supplier_name']} "
+                    f"@ ${buy_order['total_cost']:.2f}"
+                    f"{' [EXPEDITED]' if routing['expedite'] else ''}.",
+                    "info",
+                ))
         else:
-            # Cannot reallocate — issue a BUY_ORDER for Ghost-Writer
+            # Cannot reallocate — issue a BUY_ORDER for full order quantity
             buy_order = {
                 "type": "BUY_ORDER",
                 "part_id": component.part_id,
@@ -262,9 +286,11 @@ def _attempt_reallocation(
             "part_id": component.part_id,
             "source_sku": donor_names[0] if donor_names else "general_stock",
             "quantity": reallocatable,
+            "remaining": 0,
         }
 
-    # Partial reallocation — log it, but return None so a BUY_ORDER covers the rest
+    # Partial reallocation — return the action with `remaining` so the caller
+    # can issue a BUY_ORDER for only the uncovered gap (not the full order_qty).
     remaining = gap - reallocatable
     logs.append(_log(
         db,
@@ -272,4 +298,10 @@ def _attempt_reallocation(
         f"Remaining {remaining} units must be procured externally.",
         "warning",
     ))
-    return None
+    return {
+        "type": "REALLOCATE",
+        "part_id": component.part_id,
+        "source_sku": donor_names[0] if donor_names else "general_stock",
+        "quantity": reallocatable,
+        "remaining": remaining,
+    }

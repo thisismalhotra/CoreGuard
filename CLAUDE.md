@@ -37,7 +37,7 @@ See `PRD.md` and `ARCHITECTURE.md` for full product and system specifications.
 ```bash
 cd backend
 pip install -r requirements.txt
-uvicorn main:app --reload          # Start API + Socket server
+uvicorn main:socket_app --reload --host 0.0.0.0 --port 8000  # Start API + Socket server
 python seed.py                     # Seed FL-001 dataset into DB
 ```
 
