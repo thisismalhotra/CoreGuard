@@ -166,11 +166,14 @@ def get_kpis(db: Session = Depends(get_db)) -> dict[str, Any]:
     auto_approved = sum(1 for o in orders if o.status.value == "APPROVED")
     total_orders = len(orders)
 
+    # Count distinct agents that have logged activity
+    active_agents = db.query(AgentLog.agent).distinct().count()
+
     return {
         "inventory_health": round(total_on_hand / total_safety, 2) if total_safety > 0 else 0,
         "total_on_hand": total_on_hand,
         "total_safety_stock": total_safety,
-        "active_threads": 4,  # Number of agents in the system
+        "active_threads": active_agents,
         "automation_rate": round(auto_approved / total_orders * 100, 1) if total_orders > 0 else 100.0,
         "total_orders": total_orders,
     }
