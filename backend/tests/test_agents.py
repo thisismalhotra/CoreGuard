@@ -13,7 +13,10 @@ import pytest
 from database.models import (
     Part, Inventory, Supplier, CriticalityLevel, OrderStatus,
 )
-from agents.core_guard import calculate_net_requirements, ROUTING_RULES
+from agents.core_guard import (
+    calculate_net_requirements, ROUTING_RULES,
+    calculate_blast_radius, ring_fence_inventory,
+)
 from agents.ghost_writer import (
     process_buy_orders,
     FINANCIAL_CONSTITUTION_MAX_SPEND,
@@ -296,6 +299,83 @@ class TestGhostWriterConstitution:
         assert len(result["logs"]) >= 3  # Received, Processing, Created
         for log in result["logs"]:
             assert log["agent"] == "Ghost-Writer"
+
+
+# ---------------------------------------------------------------------------
+# Core-Guard — Blast Radius Analysis (PRD §3)
+# ---------------------------------------------------------------------------
+
+class TestBlastRadiusAnalysis:
+    """Test blast radius: which finished goods are affected by a component shortage."""
+
+    def test_blast_radius_returns_affected_fgs(self, db):
+        """CH-101 is used by FL-001-T — blast radius should return it."""
+        result = calculate_blast_radius(db, "CH-101")
+        assert result["part_id"] == "CH-101"
+        assert len(result["affected_finished_goods"]) >= 1
+        skus = [fg["sku"] for fg in result["affected_finished_goods"]]
+        assert "FL-001-T" in skus
+
+    def test_blast_radius_unknown_part(self, db):
+        """Unknown part should return empty affected list."""
+        result = calculate_blast_radius(db, "NONEXISTENT")
+        assert result["affected_finished_goods"] == []
+        assert result["total_revenue_at_risk"] == 0.0
+
+    def test_blast_radius_logs_generated(self, db):
+        """Blast radius analysis should emit Glass Box logs."""
+        result = calculate_blast_radius(db, "CH-101")
+        assert len(result["logs"]) > 0
+        for log in result["logs"]:
+            assert log["agent"] == "Core-Guard"
+
+
+# ---------------------------------------------------------------------------
+# Core-Guard — Ring-Fencing Enforcement (PRD §11)
+# ---------------------------------------------------------------------------
+
+class TestRingFencing:
+    """Test ring-fencing: protecting inventory for specific orders."""
+
+    def test_ring_fence_success(self, db):
+        """Should successfully ring-fence when available inventory is sufficient."""
+        result = ring_fence_inventory(db, "CH-101", "SO-VIP-001", 100)
+        assert result["success"] is True
+        assert result["qty_ring_fenced"] == 100
+
+    def test_ring_fence_blocked_when_insufficient(self, db):
+        """Should block when requested qty exceeds available inventory."""
+        # CH-101 has 500 on_hand, 50 reserved, 0 ring_fenced → 450 available
+        result = ring_fence_inventory(db, "CH-101", "SO-HUGE-999", 9999)
+        assert result["success"] is False
+
+    def test_ring_fence_reduces_available(self, db):
+        """Ring-fencing should reduce the available count."""
+        inv = db.query(Inventory).join(Part).filter(Part.part_id == "CH-101").first()
+        original_available = inv.available
+
+        ring_fence_inventory(db, "CH-101", "SO-TEST-001", 100)
+
+        # Available should have decreased by 100
+        assert inv.available == original_available - 100
+
+    def test_ring_fence_audit_trail(self, db):
+        """Both success and failure should create audit trail entries."""
+        from database.models import RingFenceAuditLog
+
+        ring_fence_inventory(db, "CH-101", "SO-AUDIT-001", 50)
+        ring_fence_inventory(db, "CH-101", "SO-AUDIT-002", 99999)  # Will fail
+
+        audits = db.query(RingFenceAuditLog).all()
+        assert len(audits) >= 2
+        actions = [a.action for a in audits]
+        assert "RING_FENCED" in actions
+        assert "BLOCKED" in actions
+
+    def test_ring_fence_unknown_part(self, db):
+        """Unknown part should fail gracefully."""
+        result = ring_fence_inventory(db, "NONEXISTENT", "SO-001", 10)
+        assert result["success"] is False
 
 
 # ---------------------------------------------------------------------------

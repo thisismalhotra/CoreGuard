@@ -15,7 +15,8 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from database.models import (
-    Part, BOMEntry, CriticalityLevel,
+    Part, BOMEntry, Inventory, CriticalityLevel,
+    RingFenceAuditLog, SalesOrder,
 )
 from agents.utils import create_agent_log
 
@@ -299,3 +300,216 @@ def _attempt_reallocation(
         "quantity": reallocatable,
         "remaining": remaining,
     }
+
+
+# ---------------------------------------------------------------------------
+# PRD §3 Step 3: Blast Radius Analysis
+# ---------------------------------------------------------------------------
+
+def calculate_blast_radius(
+    db: Session,
+    part_id_str: str,
+) -> dict[str, Any]:
+    """
+    PRD §3: Returns all finished goods that require this part, with revenue at risk.
+
+    For each finished good that uses the given component, calculates:
+      - Units at risk = min(inventory.available, demand from this component)
+      - Revenue at risk = units_at_risk × finished_good_unit_cost (estimated)
+
+    Returns:
+        {
+            "part_id": str,
+            "affected_finished_goods": [
+                {"sku": str, "description": str, "qty_per": int, "revenue_at_risk": float}
+            ],
+            "total_revenue_at_risk": float,
+            "logs": [Glass Box log dicts],
+        }
+    """
+    logs: list[dict[str, str]] = []
+
+    component = db.query(Part).filter(Part.part_id == part_id_str).first()
+    if not component:
+        logs.append(_log(db, f"Part {part_id_str} not found.", "error"))
+        return {"part_id": part_id_str, "affected_finished_goods": [],
+                "total_revenue_at_risk": 0.0, "logs": logs}
+
+    # Find all finished goods that use this component
+    bom_entries = (
+        db.query(BOMEntry)
+        .filter(BOMEntry.component_id == component.id)
+        .all()
+    )
+
+    if not bom_entries:
+        logs.append(_log(db, f"No finished goods depend on {part_id_str}.", "info"))
+        return {"part_id": part_id_str, "affected_finished_goods": [],
+                "total_revenue_at_risk": 0.0, "logs": logs}
+
+    logs.append(_log(
+        db,
+        f"Blast radius analysis for {part_id_str}: "
+        f"found {len(bom_entries)} finished good(s) that require this component.",
+    ))
+
+    affected = []
+    total_revenue = 0.0
+
+    # Revenue estimates per finished good (for MVP, these are realistic estimates)
+    REVENUE_PER_UNIT = {
+        "FL-001-T": 150.00,   # Tactical flashlight retail
+        "FL-001-S": 75.00,    # Standard flashlight retail
+    }
+
+    for bom in bom_entries:
+        parent = bom.parent
+        parent_inv = parent.inventory
+
+        # How many finished goods can we NOT build due to this shortage?
+        component_inv = component.inventory
+        component_available = component_inv.available if component_inv else 0
+        parent_available = parent_inv.on_hand if parent_inv else 0
+
+        # Units at risk: the finished goods we have committed/forecast but can't build
+        unit_revenue = REVENUE_PER_UNIT.get(parent.part_id, 100.00)
+        # Estimate units affected based on safety stock gap
+        units_at_risk = max(0, (parent_inv.safety_stock if parent_inv else 0) - parent_available)
+        # Also factor in demand: if component is short, all committed FGs are at risk
+        if component_inv and component_available < component_inv.safety_stock:
+            shortage_units = component_inv.safety_stock - component_available
+            fg_units_affected = shortage_units // max(bom.quantity_per, 1)
+            units_at_risk = max(units_at_risk, fg_units_affected)
+
+        revenue_at_risk = round(units_at_risk * unit_revenue, 2)
+        total_revenue += revenue_at_risk
+
+        affected.append({
+            "sku": parent.part_id,
+            "description": parent.description,
+            "qty_per": bom.quantity_per,
+            "units_at_risk": units_at_risk,
+            "revenue_at_risk": revenue_at_risk,
+        })
+
+        risk_level = "error" if revenue_at_risk > 10000 else "warning" if revenue_at_risk > 0 else "info"
+        logs.append(_log(
+            db,
+            f"Blast radius: {parent.part_id} ({parent.description}) — "
+            f"uses {bom.quantity_per}x {part_id_str}, "
+            f"{units_at_risk} units at risk, "
+            f"${revenue_at_risk:,.2f} revenue at risk.",
+            risk_level,
+        ))
+
+    logs.append(_log(
+        db,
+        f"Blast radius complete: {len(affected)} finished good(s) impacted. "
+        f"Total revenue at risk: ${total_revenue:,.2f}.",
+        "error" if total_revenue > 50000 else "warning" if total_revenue > 0 else "success",
+    ))
+
+    return {
+        "part_id": part_id_str,
+        "affected_finished_goods": affected,
+        "total_revenue_at_risk": total_revenue,
+        "logs": logs,
+    }
+
+
+# ---------------------------------------------------------------------------
+# PRD §11: Ring-Fencing Enforcement
+# ---------------------------------------------------------------------------
+
+def ring_fence_inventory(
+    db: Session,
+    part_id_str: str,
+    order_ref: str,
+    qty: int,
+) -> dict[str, Any]:
+    """
+    PRD §11: Ring-fence inventory for a specific order.
+
+    1. Check available (on_hand - reserved - ring_fenced_qty) >= qty
+    2. If yes: increment ring_fenced_qty, log success, return True
+    3. If no: emit "error" log with conflict details, return False
+
+    All attempts (success or block) are logged to RingFenceAuditLog.
+
+    Returns:
+        {
+            "success": bool,
+            "part_id": str,
+            "order_ref": str,
+            "qty_requested": int,
+            "qty_ring_fenced": int,
+            "logs": [Glass Box log dicts],
+        }
+    """
+    logs: list[dict[str, str]] = []
+
+    part = db.query(Part).filter(Part.part_id == part_id_str).first()
+    if not part or not part.inventory:
+        logs.append(_log(db, f"Ring-fence failed: {part_id_str} not found.", "error"))
+        return {"success": False, "part_id": part_id_str, "order_ref": order_ref,
+                "qty_requested": qty, "qty_ring_fenced": 0, "logs": logs}
+
+    inv = part.inventory
+    available_for_fencing = inv.available  # on_hand - reserved - ring_fenced_qty
+
+    if available_for_fencing >= qty:
+        # Success: ring-fence the units
+        inv.ring_fenced_qty += qty
+        inv.last_updated = datetime.now(timezone.utc)
+
+        # Audit trail
+        audit = RingFenceAuditLog(
+            part_id=part_id_str,
+            order_ref=order_ref,
+            attempted_by=order_ref,
+            qty_requested=qty,
+            qty_ring_fenced=inv.ring_fenced_qty,
+            action="RING_FENCED",
+            message=f"Successfully ring-fenced {qty} units for {order_ref}.",
+        )
+        db.add(audit)
+        db.flush()
+
+        logs.append(_log(
+            db,
+            f"Ring-fenced {qty}x {part_id_str} for order {order_ref}. "
+            f"Total ring-fenced: {inv.ring_fenced_qty}. "
+            f"Remaining available: {inv.available}.",
+            "success",
+        ))
+
+        return {"success": True, "part_id": part_id_str, "order_ref": order_ref,
+                "qty_requested": qty, "qty_ring_fenced": inv.ring_fenced_qty, "logs": logs}
+    else:
+        # Block: not enough inventory
+        audit = RingFenceAuditLog(
+            part_id=part_id_str,
+            order_ref=order_ref,
+            attempted_by=order_ref,
+            qty_requested=qty,
+            qty_ring_fenced=inv.ring_fenced_qty,
+            action="BLOCKED",
+            message=(
+                f"BLOCKED: Cannot ring-fence {qty} units for {order_ref}. "
+                f"Only {available_for_fencing} available "
+                f"(on_hand={inv.on_hand}, reserved={inv.reserved}, ring_fenced={inv.ring_fenced_qty})."
+            ),
+        )
+        db.add(audit)
+        db.flush()
+
+        logs.append(_log(
+            db,
+            f"RING-FENCE BLOCKED: {order_ref} requested {qty}x {part_id_str}, "
+            f"but only {available_for_fencing} available. "
+            f"{inv.ring_fenced_qty} units already ring-fenced for other orders.",
+            "error",
+        ))
+
+        return {"success": False, "part_id": part_id_str, "order_ref": order_ref,
+                "qty_requested": qty, "qty_ring_fenced": inv.ring_fenced_qty, "logs": logs}
