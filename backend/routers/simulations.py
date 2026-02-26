@@ -18,9 +18,11 @@ from database.models import (
 )
 from agents.aura import detect_demand_spike
 from agents.dispatcher import triage_demand_spike
-from agents.core_guard import calculate_net_requirements
+from agents.part_agent import monitor_all_components
+from agents.core_guard import calculate_net_requirements, calculate_blast_radius, ring_fence_inventory
 from agents.ghost_writer import process_buy_orders
 from agents.eagle_eye import inspect_batch
+from agents.data_integrity import run_full_integrity_check
 from schemas import (
     SpikeResponse, SupplyShockResponse, QualityFailResponse,
     CascadeFailureResponse, ConstitutionBreachResponse,
@@ -93,7 +95,10 @@ async def simulate_demand_spike(
 
     spiked_qty = int(forecast.forecast_qty * multiplier)
 
-    # Step 1: Aura detects the spike
+    # ---------------------------------------------------------------
+    # PRD §9: 5-Step Execution Loop
+    # Step 1: AURA — Demand spike detection (Trigger Event)
+    # ---------------------------------------------------------------
     aura_result = detect_demand_spike(db, sku, spiked_qty)
     all_logs.extend(aura_result["logs"])
     await emit_logs(aura_result["logs"])
@@ -101,17 +106,43 @@ async def simulate_demand_spike(
     if not aura_result["spike_detected"]:
         return {"status": "no_spike", "aura": aura_result, "logs": all_logs}
 
-    # Step 2: Dispatcher triages components by criticality
+    # ---------------------------------------------------------------
+    # Step 2: PART AGENT — Baseline Monitoring + Local Validation (PRD §9 Steps 1-3)
+    # Each Part Agent checks its own runway and dynamic safety stock
+    # ---------------------------------------------------------------
+    part_agent_result = monitor_all_components(db, sku, spiked_qty)
+    all_logs.extend(part_agent_result["logs"])
+    await emit_logs(part_agent_result["logs"])
+
+    # ---------------------------------------------------------------
+    # Step 3: DISPATCHER — Triage components by criticality
+    # ---------------------------------------------------------------
     dispatch_result = triage_demand_spike(db, sku, spiked_qty)
     all_logs.extend(dispatch_result["logs"])
     await emit_logs(dispatch_result["logs"])
 
-    # Step 3: Core-Guard calculates net requirements
+    # ---------------------------------------------------------------
+    # Step 4: CORE-GUARD — MRP explosion + ring-fencing (PRD §9 Steps 4-5)
+    # Core-Guard receives verified Crisis Signals from Part Agent
+    # ---------------------------------------------------------------
     mrp_result = calculate_net_requirements(db, sku, spiked_qty)
     all_logs.extend(mrp_result["logs"])
     await emit_logs(mrp_result["logs"])
 
-    # Step 4: Ghost-Writer processes buy orders
+    # Ring-fence existing VIP order inventory (PRD §11)
+    ring_fence_result = ring_fence_inventory(db, sku, "SO-VIP-001", min(50, spiked_qty // 10))
+    all_logs.extend(ring_fence_result["logs"])
+    await emit_logs(ring_fence_result["logs"])
+
+    # Blast radius analysis for any components in shortage
+    for shortage in mrp_result.get("shortages", []):
+        blast_result = calculate_blast_radius(db, shortage["part_id"])
+        all_logs.extend(blast_result["logs"])
+        await emit_logs(blast_result["logs"])
+
+    # ---------------------------------------------------------------
+    # Step 5: GHOST-WRITER — Draft Purchase Orders
+    # ---------------------------------------------------------------
     buy_orders = [a for a in mrp_result["actions"] if a["type"] == "BUY_ORDER"]
 
     ghost_result: dict[str, Any] = {"purchase_orders": [], "logs": []}
@@ -120,7 +151,7 @@ async def simulate_demand_spike(
         all_logs.extend(ghost_result["logs"])
         await emit_logs(ghost_result["logs"])
 
-    # Single atomic commit — all agent work (Aura, Dispatcher, Core-Guard, Ghost-Writer)
+    # Single atomic commit — all agent work (Aura, Part Agent, Dispatcher, Core-Guard, Ghost-Writer)
     # is flushed during execution; we commit once at the end of the simulation.
     db.commit()
 

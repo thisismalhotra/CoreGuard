@@ -28,7 +28,9 @@ def get_inventory(db: Session = Depends(get_db)) -> list[dict]:
             "on_hand": inv.on_hand,
             "safety_stock": inv.safety_stock,
             "reserved": inv.reserved,
+            "ring_fenced": inv.ring_fenced_qty,
             "available": inv.available,
+            "daily_burn_rate": inv.daily_burn_rate,
             "supplier": part.supplier.name if part.supplier else None,
         }
         for inv, part in records

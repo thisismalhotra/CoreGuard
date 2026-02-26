@@ -35,7 +35,9 @@ class InventoryItemResponse(BaseModel):
     on_hand: int
     safety_stock: int
     reserved: int
+    ring_fenced: int = 0
     available: int
+    daily_burn_rate: float = 0.0
     supplier: Optional[str] = None
 
 

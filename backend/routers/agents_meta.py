@@ -9,6 +9,7 @@ from database.connection import get_db
 from database.models import (
     Supplier, Part, Inventory, BOMEntry, PurchaseOrder,
     DemandForecast, QualityInspection, AgentLog,
+    SalesOrder, RingFenceAuditLog, InventoryHealthRecord,
 )
 from schemas import (
     AgentMetadata, DBSupplierRow, DBPartRow, DBInventoryRow,
@@ -23,6 +24,26 @@ router = APIRouter(prefix="/api", tags=["agents"])
 def get_agents() -> list[dict]:
     """Return metadata for all agents in the system."""
     return [
+        {
+            "name": "Part-Agent",
+            "role": "Digital Twin / SKU Sentinel",
+            "description": "Each Part Agent acts as a digital twin for a single SKU. Continuously monitors on-hand levels, calculates dynamic safety stock, computes real-time runway (days to stockout), and triggers a handshake to Core-Guard when runway drops below the threshold.",
+            "trigger": "Demand spike event or continuous monitoring cycle",
+            "inputs": ["Part ID", "On-Hand inventory", "Daily burn rate (trailing 3-day velocity)", "Supplier lead time"],
+            "outputs": ["Dynamic safety stock", "Runway (days to stockout)", "Crisis Signal (handshake to Core-Guard)", "Glass Box logs"],
+            "downstream": "Core-Guard (via handshake)",
+            "constitution": None,
+            "rules": [
+                "Dynamic Safety Stock = (Max Daily Usage × Max Lead Time) - (Avg Daily Usage × Avg Lead Time)",
+                "Runway = On-Hand / Trailing 3-Day Velocity (NOT monthly forecast average — PRD §8)",
+                "Handshake Trigger: if runway < (supplier_lead_time + safety_stock_days)",
+                "Sends verified Crisis Signal (not raw data) to Core-Guard",
+                "Stateless — operates on DB state, never caches",
+            ],
+            "color": "yellow",
+            "icon": "Cpu",
+            "source_file": "agents/part_agent.py",
+        },
         {
             "name": "Aura",
             "role": "Demand Sensing Agent",
@@ -128,6 +149,44 @@ def get_agents() -> list[dict]:
             "color": "orange",
             "icon": "Eye",
             "source_file": "agents/eagle_eye.py",
+        },
+        {
+            "name": "Data-Integrity",
+            "role": "Inventory Health Monitor",
+            "description": "Ensures inventory data is trustworthy by scanning for ghost inventory (scheduled consumption but no deductions) and suspect inventory (no movement for 6+ months). Generates cycle count and physical count tasks.",
+            "trigger": "Scheduled scan or manual invocation",
+            "inputs": ["Inventory table", "Last consumption dates", "Daily burn rates"],
+            "outputs": ["Ghost inventory flags", "Suspect inventory flags", "Cycle count tasks", "Physical count tasks", "Glass Box logs"],
+            "downstream": None,
+            "constitution": None,
+            "rules": [
+                "Ghost Inventory: if burn_rate > 0 and no consumption for 14+ days → flag + cycle count",
+                "Suspect Inventory: if on_hand > 0 and no movement for 180+ days → flag + physical count",
+                "Flagged parts write InventoryHealthRecord entries (GHOST/SUSPECT)",
+                "Ghost inventory should be blocked from MRP calculations",
+            ],
+            "color": "red",
+            "icon": "ShieldAlert",
+            "source_file": "agents/data_integrity.py",
+        },
+        {
+            "name": "Demand-Horizon",
+            "role": "Demand Zone Classifier",
+            "description": "Classifies incoming demand signals into three horizon zones (PRD §10) and routes them to the appropriate agent behaviour. Determines whether to advise, procure, or expedite.",
+            "trigger": "New demand signal / forecast update",
+            "inputs": ["Part ID", "Demand quantity", "Days until needed", "Supplier lead time"],
+            "outputs": ["Zone classification (1/2/3)", "Active agents list", "Recommended action", "Secondary supplier (Zone 3)", "Glass Box logs"],
+            "downstream": "Aura (Z1) / Core-Guard+Ghost-Writer (Z2) / Part-Agent+Core-Guard (Z3)",
+            "constitution": None,
+            "rules": [
+                "Zone 1 (6-12+ months): Aura advisory only, NO POs generated",
+                "Zone 2 (2-5 months): Core-Guard BOM explosion + Ghost-Writer standard POs",
+                "Zone 3 (< lead time): Part Agent defends, Ghost-Writer pivots to secondary supplier",
+                "Zone 3 POs are always expedited with cost-vs-risk trade-off",
+            ],
+            "color": "amber",
+            "icon": "Layers",
+            "source_file": "agents/demand_horizon.py",
         },
     ]
 
@@ -269,4 +328,56 @@ def db_agent_logs(
          "log_type": log.log_type,
          "timestamp": log.timestamp.isoformat() if log.timestamp else None}
         for log in rows
+    ]
+
+
+@router.get("/db/sales_orders")
+def db_sales_orders(
+    db: Session = Depends(get_db),
+    limit: int = Query(default=100, ge=1, le=1000),
+    offset: int = Query(default=0, ge=0),
+) -> list[dict]:
+    """Raw sales_orders table dump."""
+    rows = db.query(SalesOrder).order_by(SalesOrder.id).offset(offset).limit(limit).all()
+    return [
+        {"id": so.id, "order_number": so.order_number,
+         "part": so.part.part_id if so.part else None,
+         "quantity": so.quantity, "status": so.status.value,
+         "priority": so.priority,
+         "created_at": so.created_at.isoformat() if so.created_at else None}
+        for so in rows
+    ]
+
+
+@router.get("/db/ring_fence_audit")
+def db_ring_fence_audit(
+    db: Session = Depends(get_db),
+    limit: int = Query(default=100, ge=1, le=1000),
+    offset: int = Query(default=0, ge=0),
+) -> list[dict]:
+    """Raw ring_fence_audit table dump."""
+    rows = db.query(RingFenceAuditLog).order_by(RingFenceAuditLog.id.desc()).offset(offset).limit(limit).all()
+    return [
+        {"id": r.id, "part_id": r.part_id, "order_ref": r.order_ref,
+         "attempted_by": r.attempted_by, "qty_requested": r.qty_requested,
+         "qty_ring_fenced": r.qty_ring_fenced, "action": r.action,
+         "message": r.message,
+         "timestamp": r.timestamp.isoformat() if r.timestamp else None}
+        for r in rows
+    ]
+
+
+@router.get("/db/inventory_health")
+def db_inventory_health(
+    db: Session = Depends(get_db),
+    limit: int = Query(default=100, ge=1, le=1000),
+    offset: int = Query(default=0, ge=0),
+) -> list[dict]:
+    """Raw inventory_health table dump."""
+    rows = db.query(InventoryHealthRecord).order_by(InventoryHealthRecord.id.desc()).offset(offset).limit(limit).all()
+    return [
+        {"id": h.id, "part_id": h.part_id, "flag": h.flag.value,
+         "resolved": bool(h.resolved), "notes": h.notes,
+         "detected_at": h.detected_at.isoformat() if h.detected_at else None}
+        for h in rows
     ]
