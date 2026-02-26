@@ -29,6 +29,13 @@ from agents.part_agent import (
     monitor_part,
     monitor_all_components,
 )
+from agents.data_integrity import (
+    detect_ghost_inventory,
+    detect_suspect_inventory,
+    run_full_integrity_check,
+    GHOST_INVENTORY_DAYS,
+    SUSPECT_INVENTORY_DAYS,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -381,6 +388,58 @@ class TestRingFencing:
 # ---------------------------------------------------------------------------
 # Part Agent — Digital Twin (PRD §4, §8, §9)
 # ---------------------------------------------------------------------------
+
+class TestDataIntegrity:
+    """Test Data Integrity Agent — Ghost and Suspect Inventory (PRD §11)."""
+
+    def test_ghost_inventory_detected(self, db):
+        """Parts with burn rate > 0 and no consumption should be flagged as ghost."""
+        from datetime import datetime, timezone, timedelta
+
+        # Set CH-101's last_consumption_date to 20 days ago (> 14-day threshold)
+        inv = db.query(Inventory).join(Part).filter(Part.part_id == "CH-101").first()
+        inv.last_consumption_date = datetime.now(timezone.utc) - timedelta(days=20)
+        db.flush()
+
+        result = detect_ghost_inventory(db)
+        ghost_ids = [g["part_id"] for g in result["ghost_parts"]]
+        # CH-101 should NOT be ghost since we set a recent-ish date (20 > 14)
+        assert "CH-101" in ghost_ids
+        assert len(result["cycle_count_tasks"]) > 0
+
+    def test_no_ghost_when_recently_consumed(self, db):
+        """Parts consumed recently should not be flagged."""
+        from datetime import datetime, timezone, timedelta
+
+        # Set all parts to recently consumed
+        for inv in db.query(Inventory).all():
+            inv.last_consumption_date = datetime.now(timezone.utc) - timedelta(days=5)
+        db.flush()
+
+        result = detect_ghost_inventory(db)
+        assert len(result["ghost_parts"]) == 0
+
+    def test_suspect_inventory_detected(self, db):
+        """Parts not moved in 6+ months should be flagged as suspect."""
+        from datetime import datetime, timezone, timedelta
+
+        # Set CH-101's last_updated to 200 days ago (> 180-day threshold)
+        inv = db.query(Inventory).join(Part).filter(Part.part_id == "CH-101").first()
+        inv.last_updated = datetime.now(timezone.utc) - timedelta(days=200)
+        db.flush()
+
+        result = detect_suspect_inventory(db)
+        suspect_ids = [s["part_id"] for s in result["suspect_parts"]]
+        assert "CH-101" in suspect_ids
+
+    def test_full_integrity_check(self, db):
+        """Full check should run both ghost and suspect scans."""
+        result = run_full_integrity_check(db)
+        assert "ghost" in result
+        assert "suspect" in result
+        assert "total_issues" in result
+        assert len(result["logs"]) > 0
+
 
 class TestPartAgentFormulas:
     """Test Part Agent pure math functions (PRD §8)."""
