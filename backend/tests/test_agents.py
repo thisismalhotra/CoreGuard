@@ -19,6 +19,13 @@ from agents.ghost_writer import (
     FINANCIAL_CONSTITUTION_MAX_SPEND,
 )
 from agents.aura import detect_demand_spike
+from agents.part_agent import (
+    calculate_dynamic_safety_stock,
+    calculate_runway,
+    evaluate_handshake_trigger,
+    monitor_part,
+    monitor_all_components,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -289,6 +296,80 @@ class TestGhostWriterConstitution:
         assert len(result["logs"]) >= 3  # Received, Processing, Created
         for log in result["logs"]:
             assert log["agent"] == "Ghost-Writer"
+
+
+# ---------------------------------------------------------------------------
+# Part Agent — Digital Twin (PRD §4, §8, §9)
+# ---------------------------------------------------------------------------
+
+class TestPartAgentFormulas:
+    """Test Part Agent pure math functions (PRD §8)."""
+
+    def test_dynamic_safety_stock_formula(self):
+        """PRD §8: Safety Stock = (Max Usage × Max LT) - (Avg Usage × Avg LT)."""
+        # (60 × 10) - (40 × 7) = 600 - 280 = 320
+        result = calculate_dynamic_safety_stock(60.0, 10, 40.0, 7.0)
+        assert result == 320
+
+    def test_dynamic_safety_stock_clamped_to_zero(self):
+        """Safety stock should never be negative."""
+        # (10 × 5) - (20 × 7) = 50 - 140 = -90 → clamped to 0
+        result = calculate_dynamic_safety_stock(10.0, 5, 20.0, 7.0)
+        assert result == 0
+
+    def test_runway_normal(self):
+        """PRD §8: Days to Stockout = On-Hand / Burn Rate."""
+        result = calculate_runway(500, 40.0)
+        assert result == 12.5
+
+    def test_runway_zero_burn_rate(self):
+        """Zero burn rate → infinite runway."""
+        result = calculate_runway(500, 0.0)
+        assert result == float("inf")
+
+    def test_handshake_trigger_fires(self):
+        """Handshake fires when runway < (lead_time + safety_days)."""
+        # runway=8, threshold=5+5=10 → 8 < 10 → True
+        assert evaluate_handshake_trigger(8.0, 5, 5.0) is True
+
+    def test_handshake_trigger_safe(self):
+        """No handshake when runway is above threshold."""
+        # runway=20, threshold=5+5=10 → 20 < 10 → False
+        assert evaluate_handshake_trigger(20.0, 5, 5.0) is False
+
+
+class TestPartAgentMonitoring:
+    """Test Part Agent's monitor_part and monitor_all_components (PRD §9)."""
+
+    def test_monitor_part_returns_valid_structure(self, db):
+        """monitor_part should return all required fields."""
+        result = monitor_part(db, "CH-101")
+        assert result["part_id"] == "CH-101"
+        assert "on_hand" in result
+        assert "daily_burn_rate" in result
+        assert "runway_days" in result
+        assert "dynamic_safety_stock" in result
+        assert "handshake_triggered" in result
+        assert len(result["logs"]) > 0
+
+    def test_monitor_part_unknown_sku(self, db):
+        """Unknown SKU should return gracefully."""
+        result = monitor_part(db, "NONEXISTENT")
+        assert result["handshake_triggered"] is False
+        assert result["crisis_signal"] is None
+
+    def test_monitor_all_components(self, db):
+        """monitor_all_components should check all BOM components for a finished good."""
+        result = monitor_all_components(db, "FL-001-T", 100)
+        assert result["sku"] == "FL-001-T"
+        assert len(result["component_reports"]) == 3  # CH-101, SW-303, LNS-505
+        assert len(result["logs"]) > 0
+
+    def test_high_demand_triggers_handshake(self, db):
+        """Very high demand should cause at least one component to trigger handshake."""
+        result = monitor_all_components(db, "FL-001-T", 50000)
+        # With 50000 demand, burn rates spike massively → handshakes should fire
+        assert len(result["crisis_signals"]) > 0
 
 
 # ---------------------------------------------------------------------------
