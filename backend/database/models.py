@@ -96,14 +96,17 @@ class Inventory(Base):
     on_hand = Column(Integer, nullable=False, default=0)
     safety_stock = Column(Integer, nullable=False, default=0)
     reserved = Column(Integer, nullable=False, default=0)  # Allocated to existing orders
+    ring_fenced_qty = Column(Integer, nullable=False, default=0)  # PRD §12: units protected for specific orders
+    daily_burn_rate = Column(Float, nullable=False, default=0.0)  # PRD §8: trailing 3-day velocity
     last_updated = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    last_consumption_date = Column(DateTime, nullable=True)  # PRD §11: ghost inventory detection
 
     part = relationship("Part", back_populates="inventory")
 
     @property
     def available(self) -> int:
         """Unreserved stock available for new orders. Clamped to 0 minimum."""
-        return max(0, self.on_hand - self.reserved)
+        return max(0, self.on_hand - self.reserved - self.ring_fenced_qty)
 
     def __repr__(self) -> str:
         return f"<Inventory {self.part.part_id if self.part else '?'}: {self.on_hand} on hand>"
@@ -178,6 +181,69 @@ class QualityInspection(Base):
 
     def __repr__(self) -> str:
         return f"<Inspection {self.part_id}: {self.result.value}>"
+
+
+class SalesOrderStatus(str, enum.Enum):
+    OPEN = "OPEN"
+    FULFILLED = "FULFILLED"
+    CANCELLED = "CANCELLED"
+
+
+class SalesOrder(Base):
+    """PRD §12 Step 1: Tracks customer sales orders that drive demand."""
+    __tablename__ = "sales_orders"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    order_number = Column(String(50), nullable=False, unique=True)
+    part_id = Column(Integer, ForeignKey("parts.id"), nullable=False)
+    quantity = Column(Integer, nullable=False)
+    status = Column(SAEnum(SalesOrderStatus), nullable=False, default=SalesOrderStatus.OPEN)
+    priority = Column(String(20), default="NORMAL")  # NORMAL | VIP | EXPEDITED
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+    part = relationship("Part")
+
+    def __repr__(self) -> str:
+        return f"<SalesOrder {self.order_number}: {self.quantity}x [{self.status.value}]>"
+
+
+class RingFenceAuditLog(Base):
+    """PRD §11: Audit trail for ring-fencing enforcement — logs every override attempt."""
+    __tablename__ = "ring_fence_audit"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    timestamp = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    part_id = Column(String(20), nullable=False)
+    order_ref = Column(String(50), nullable=False)  # Sales order that owns the ring-fenced stock
+    attempted_by = Column(String(50), nullable=False)  # Order/agent that tried to pull stock
+    qty_requested = Column(Integer, nullable=False)
+    qty_ring_fenced = Column(Integer, nullable=False)
+    action = Column(String(20), nullable=False)  # BLOCKED | APPROVED | RING_FENCED
+    message = Column(Text, default="")
+
+    def __repr__(self) -> str:
+        return f"<RingFenceAudit {self.part_id}: {self.action} by {self.attempted_by}>"
+
+
+class InventoryFlag(str, enum.Enum):
+    GHOST = "GHOST"          # PRD §11: scheduled consumption > 0 but no deductions for 14 days
+    SUSPECT = "SUSPECT"      # PRD §11: part not moved in 6 months but count > 0
+    NORMAL = "NORMAL"
+
+
+class InventoryHealthRecord(Base):
+    """PRD §11: Tracks data integrity flags (ghost inventory, suspect inventory)."""
+    __tablename__ = "inventory_health"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    part_id = Column(String(20), nullable=False)
+    flag = Column(SAEnum(InventoryFlag), nullable=False, default=InventoryFlag.NORMAL)
+    detected_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    resolved = Column(Boolean, default=False)
+    notes = Column(Text, default="")
+
+    def __repr__(self) -> str:
+        return f"<InventoryHealth {self.part_id}: {self.flag.value}>"
 
 
 class AgentLog(Base):

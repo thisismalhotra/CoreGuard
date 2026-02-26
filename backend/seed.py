@@ -22,8 +22,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from database.connection import init_db, SessionLocal
 from database.models import (
-    Supplier, Part, Inventory, BOMEntry, DemandForecast,
-    PartCategory, CriticalityLevel,
+    Supplier, Part, Inventory, BOMEntry, DemandForecast, SalesOrder,
+    PartCategory, CriticalityLevel, SalesOrderStatus,
 )
 
 
@@ -138,12 +138,18 @@ def seed() -> None:
     # 4. INVENTORY (Starting levels for simulation)
     # ---------------------------------------------------------------
     inventory_data = [
-        {"part_id": "CH-101", "on_hand": 500, "safety_stock": 200, "reserved": 100},
-        {"part_id": "SW-303", "on_hand": 800, "safety_stock": 300, "reserved": 50},
-        {"part_id": "LNS-505", "on_hand": 350, "safety_stock": 150, "reserved": 75},
+        # PRD §8: daily_burn_rate = trailing 3-day velocity; ring_fenced_qty per PRD §11
+        {"part_id": "CH-101", "on_hand": 500, "safety_stock": 200, "reserved": 100,
+         "ring_fenced_qty": 0, "daily_burn_rate": 40.0},
+        {"part_id": "SW-303", "on_hand": 800, "safety_stock": 300, "reserved": 50,
+         "ring_fenced_qty": 0, "daily_burn_rate": 25.0},
+        {"part_id": "LNS-505", "on_hand": 350, "safety_stock": 150, "reserved": 75,
+         "ring_fenced_qty": 0, "daily_burn_rate": 18.0},
         # Finished goods track assembled units
-        {"part_id": "FL-001-T", "on_hand": 120, "safety_stock": 50, "reserved": 0},
-        {"part_id": "FL-001-S", "on_hand": 300, "safety_stock": 100, "reserved": 0},
+        {"part_id": "FL-001-T", "on_hand": 120, "safety_stock": 50, "reserved": 0,
+         "ring_fenced_qty": 0, "daily_burn_rate": 8.0},
+        {"part_id": "FL-001-S", "on_hand": 300, "safety_stock": 100, "reserved": 0,
+         "ring_fenced_qty": 0, "daily_burn_rate": 12.0},
     ]
 
     for inv in inventory_data:
@@ -152,6 +158,8 @@ def seed() -> None:
             on_hand=inv["on_hand"],
             safety_stock=inv["safety_stock"],
             reserved=inv["reserved"],
+            ring_fenced_qty=inv["ring_fenced_qty"],
+            daily_burn_rate=inv["daily_burn_rate"],
         )
         db.add(record)
 
@@ -171,6 +179,25 @@ def seed() -> None:
         )
         db.add(forecast)
 
+    # ---------------------------------------------------------------
+    # 6. SALES ORDERS (PRD §12 Step 1 — drives ring-fencing)
+    # ---------------------------------------------------------------
+    sales_order_data = [
+        {"order_number": "SO-VIP-001", "part_id": "FL-001-T", "quantity": 50, "priority": "VIP"},
+        {"order_number": "SO-STD-002", "part_id": "FL-001-S", "quantity": 100, "priority": "NORMAL"},
+        {"order_number": "SO-EXP-003", "part_id": "FL-001-T", "quantity": 30, "priority": "EXPEDITED"},
+    ]
+
+    for so in sales_order_data:
+        order = SalesOrder(
+            order_number=so["order_number"],
+            part_id=parts[so["part_id"]].id,
+            quantity=so["quantity"],
+            priority=so["priority"],
+            status=SalesOrderStatus.OPEN,
+        )
+        db.add(order)
+
     db.commit()
     db.close()
 
@@ -180,6 +207,7 @@ def seed() -> None:
     logger.info("  - %d BOM entries", len(bom_data))
     logger.info("  - %d inventory records", len(inventory_data))
     logger.info("  - %d demand forecasts", len(forecast_data))
+    logger.info("  - %d sales orders", len(sales_order_data))
 
 
 if __name__ == "__main__":

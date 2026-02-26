@@ -10,8 +10,8 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from database.models import (
-    Base, Supplier, Part, Inventory, BOMEntry, DemandForecast,
-    PartCategory, CriticalityLevel,
+    Base, Supplier, Part, Inventory, BOMEntry, DemandForecast, SalesOrder,
+    PartCategory, CriticalityLevel, SalesOrderStatus,
 )
 
 
@@ -39,13 +39,13 @@ def db():
     session.add_all([fl001t, fl001s, ch101, sw303, lns505])
     session.flush()
 
-    # --- Seed inventory ---
+    # --- Seed inventory (includes PRD §8 daily_burn_rate and §11 ring_fenced_qty) ---
     session.add_all([
-        Inventory(part_id=fl001t.id, on_hand=0, safety_stock=0, reserved=0),
-        Inventory(part_id=fl001s.id, on_hand=0, safety_stock=0, reserved=0),
-        Inventory(part_id=ch101.id, on_hand=500, safety_stock=200, reserved=50),
-        Inventory(part_id=sw303.id, on_hand=800, safety_stock=300, reserved=100),
-        Inventory(part_id=lns505.id, on_hand=600, safety_stock=250, reserved=50),
+        Inventory(part_id=fl001t.id, on_hand=0, safety_stock=0, reserved=0, ring_fenced_qty=0, daily_burn_rate=8.0),
+        Inventory(part_id=fl001s.id, on_hand=0, safety_stock=0, reserved=0, ring_fenced_qty=0, daily_burn_rate=12.0),
+        Inventory(part_id=ch101.id, on_hand=500, safety_stock=200, reserved=50, ring_fenced_qty=0, daily_burn_rate=40.0),
+        Inventory(part_id=sw303.id, on_hand=800, safety_stock=300, reserved=100, ring_fenced_qty=0, daily_burn_rate=25.0),
+        Inventory(part_id=lns505.id, on_hand=600, safety_stock=250, reserved=50, ring_fenced_qty=0, daily_burn_rate=18.0),
     ])
     session.flush()
 
@@ -59,6 +59,13 @@ def db():
 
     # --- Seed demand forecast ---
     session.add(DemandForecast(part_id=fl001t.id, forecast_qty=100, actual_qty=0))
+    session.flush()
+
+    # --- Seed sales orders (for ring-fencing tests) ---
+    session.add_all([
+        SalesOrder(order_number="SO-VIP-001", part_id=fl001t.id, quantity=50, priority="VIP", status=SalesOrderStatus.OPEN),
+        SalesOrder(order_number="SO-STD-002", part_id=fl001s.id, quantity=100, priority="NORMAL", status=SalesOrderStatus.OPEN),
+    ])
     session.flush()
 
     session.commit()

@@ -29,10 +29,10 @@ class TestInventoryAvailable:
     """Test the computed `available` property on Inventory model."""
 
     def test_available_normal(self, db):
-        """available = on_hand - reserved when positive."""
+        """available = on_hand - reserved - ring_fenced_qty when positive."""
         inv = db.query(Inventory).join(Part).filter(Part.part_id == "CH-101").first()
-        assert inv.available == inv.on_hand - inv.reserved
-        assert inv.available == 450  # 500 - 50
+        assert inv.available == max(0, inv.on_hand - inv.reserved - inv.ring_fenced_qty)
+        assert inv.available == 450  # 500 - 50 - 0
 
     def test_available_clamped_to_zero(self, db):
         """available never goes negative, even when reserved > on_hand."""
