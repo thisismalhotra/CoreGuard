@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Activity, Terminal, Shield, Zap, Database, Bot, AlertTriangle } from "lucide-react";
+import { Activity, Terminal, Shield, Zap, Database, Bot, AlertTriangle, HelpCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
 import { getSocket, type AgentLog } from "@/lib/socket";
@@ -13,6 +13,7 @@ import { InventoryCards } from "./InventoryCards";
 import { GodMode } from "./GodMode";
 import { DigitalDock } from "./DigitalDock";
 import { ThemeToggle } from "./ThemeToggle";
+import { OnboardingModal } from "./OnboardingModal";
 
 export function CommandCenter() {
   const [logs, setLogs] = useState<AgentLog[]>([]);
@@ -73,6 +74,7 @@ export function CommandCenter() {
 
   return (
     <div className="min-h-screen bg-background text-foreground p-6">
+      <OnboardingModal />
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <div>
@@ -102,6 +104,16 @@ export function CommandCenter() {
             >
               <Database className="h-3.5 w-3.5" />
               DB Viewer
+            </Button>
+          </Link>
+          <Link href="/onboarding">
+            <Button
+              variant="outline"
+              size="sm"
+              className="border-input text-muted-foreground hover:text-foreground hover:border-foreground/30 gap-1.5"
+            >
+              <HelpCircle className="h-3.5 w-3.5" />
+              Guide
             </Button>
           </Link>
           <ThemeToggle />
@@ -163,7 +175,11 @@ export function CommandCenter() {
         </TabsContent>
 
         <TabsContent value="logs" className="mt-4">
-          <LiveLogs logs={logs} onClear={() => setLogs([])} />
+          <LiveLogs
+            logs={logs}
+            onClear={() => setLogs([])}
+            onSwitchToGodMode={() => setActiveTab("godmode")}
+          />
         </TabsContent>
 
         <TabsContent value="dock" className="mt-4">

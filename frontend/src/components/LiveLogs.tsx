@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Trash2, Clock } from "lucide-react";
+import { Trash2, Clock, Terminal, Zap } from "lucide-react";
 import type { AgentLog } from "@/lib/socket";
 import { api } from "@/lib/api";
 
@@ -32,9 +32,11 @@ const DELAY_OPTIONS = [
 export function LiveLogs({
   logs,
   onClear,
+  onSwitchToGodMode,
 }: {
   logs: AgentLog[];
   onClear: () => void;
+  onSwitchToGodMode?: () => void;
 }) {
   const bottomRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -117,9 +119,26 @@ export function LiveLogs({
       {/* Log terminal */}
       <div ref={containerRef} className="bg-background rounded-lg border border-border font-mono text-sm h-[500px] overflow-y-auto p-4">
         {logs.length === 0 && (
-          <p className="text-muted-foreground animate-pulse">
-            Awaiting agent activity...
-          </p>
+          <div className="flex flex-col items-center justify-center h-full gap-3 text-center font-sans">
+            <Terminal className="h-8 w-8 text-muted-foreground/30" />
+            <p className="text-muted-foreground text-sm">No agent activity yet.</p>
+            <p className="text-muted-foreground/60 text-xs max-w-xs leading-relaxed">
+              Go to <span className="text-yellow-400 font-medium">God Mode</span> and click{" "}
+              <span className="font-medium text-foreground/70">Inject Chaos</span> to watch
+              agents work in real-time.
+            </p>
+            {onSwitchToGodMode && (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={onSwitchToGodMode}
+                className="gap-1.5 mt-1 border-input text-muted-foreground hover:text-foreground hover:border-foreground/30 text-xs"
+              >
+                <Zap className="h-3 w-3" />
+                Go to God Mode
+              </Button>
+            )}
+          </div>
         )}
         {logs.map((log, i) => {
           const time = log.timestamp

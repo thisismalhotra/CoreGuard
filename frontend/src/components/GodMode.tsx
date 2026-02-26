@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Flame, TrendingUp, XCircle, CheckCircle, AlertCircle,
-  Layers, DollarSign, WifiOff, RefreshCw,
+  Layers, DollarSign, WifiOff, RefreshCw, Zap,
 } from "lucide-react";
 import { api } from "@/lib/api";
 
@@ -119,6 +119,21 @@ export function GodMode({
 
   return (
     <div className="space-y-4">
+      {/* First-run intro banner — shown until any scenario has been triggered */}
+      {Object.keys(results).length === 0 && (
+        <div className="flex items-start gap-3 bg-card border border-border rounded-lg px-4 py-3">
+          <Zap className="h-4 w-4 text-yellow-400 shrink-0 mt-0.5" />
+          <div>
+            <p className="text-sm font-medium text-foreground">Ready to simulate</p>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Pick a scenario below and click{" "}
+              <span className="font-medium text-foreground/80">Inject Chaos</span>.
+              Logs will stream live in the{" "}
+              <span className="font-medium text-blue-400">Live Logs</span> tab.
+            </p>
+          </div>
+        </div>
+      )}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         {scenarios.map((scenario) => {
           const Icon = scenario.icon;
