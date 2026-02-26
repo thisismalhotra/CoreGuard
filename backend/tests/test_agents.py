@@ -36,6 +36,12 @@ from agents.data_integrity import (
     GHOST_INVENTORY_DAYS,
     SUSPECT_INVENTORY_DAYS,
 )
+from agents.demand_horizon import (
+    classify_demand_zone,
+    evaluate_demand_horizon,
+    ZONE_1_MIN_DAYS,
+    ZONE_2_MIN_DAYS,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -388,6 +394,49 @@ class TestRingFencing:
 # ---------------------------------------------------------------------------
 # Part Agent — Digital Twin (PRD §4, §8, §9)
 # ---------------------------------------------------------------------------
+
+class TestDemandHorizonZones:
+    """Test Demand Horizon Zones classification (PRD §10)."""
+
+    def test_zone_1_fuzzy_forecast(self):
+        """Demand > 6 months out → Zone 1."""
+        assert classify_demand_zone(200, 7) == 1
+
+    def test_zone_2_lead_time_horizon(self):
+        """Demand 2-5 months out → Zone 2."""
+        assert classify_demand_zone(90, 7) == 2
+
+    def test_zone_3_drop_in_crisis(self):
+        """Demand < 2 months out → Zone 3."""
+        assert classify_demand_zone(30, 7) == 3
+
+    def test_zone_1_no_po(self, db):
+        """Zone 1 should NOT generate a PO."""
+        result = evaluate_demand_horizon(db, "CH-101", 500, 365)
+        assert result["zone"] == 1
+        assert result["generate_po"] is False
+        assert "Aura" in result["active_agents"]
+
+    def test_zone_2_standard_po(self, db):
+        """Zone 2 should generate a standard PO (no expedite)."""
+        result = evaluate_demand_horizon(db, "CH-101", 500, 90)
+        assert result["zone"] == 2
+        assert result["generate_po"] is True
+        assert result["expedite"] is False
+
+    def test_zone_3_crisis_expedited(self, db):
+        """Zone 3 inside lead time should expedite + secondary supplier."""
+        result = evaluate_demand_horizon(db, "CH-101", 500, 3)
+        assert result["zone"] == 3
+        assert result["generate_po"] is True
+        assert result["expedite"] is True
+        assert result["use_secondary_supplier"] is True
+
+    def test_zone_3_logs_generated(self, db):
+        """Zone 3 should emit Glass Box logs."""
+        result = evaluate_demand_horizon(db, "CH-101", 500, 3)
+        assert len(result["logs"]) > 0
+
 
 class TestDataIntegrity:
     """Test Data Integrity Agent — Ghost and Suspect Inventory (PRD §11)."""
