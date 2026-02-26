@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Activity, Terminal, Shield, Zap, Database, Bot, AlertTriangle, HelpCircle } from "lucide-react";
+import { Activity, Terminal, Shield, Zap, Database, Bot, AlertTriangle, HelpCircle, BarChart3 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
 import { getSocket, type AgentLog } from "@/lib/socket";
@@ -12,6 +12,7 @@ import { LiveLogs } from "./LiveLogs";
 import { InventoryCards } from "./InventoryCards";
 import { GodMode } from "./GodMode";
 import { DigitalDock } from "./DigitalDock";
+import { InventoryCharts } from "./InventoryCharts";
 import { ThemeToggle } from "./ThemeToggle";
 import { OnboardingModal } from "./OnboardingModal";
 
@@ -156,6 +157,10 @@ export function CommandCenter() {
             <Activity className="h-3.5 w-3.5" />
             Network Status
           </TabsTrigger>
+          <TabsTrigger value="analytics" className="data-[state=active]:bg-muted gap-1.5">
+            <BarChart3 className="h-3.5 w-3.5" />
+            Analytics
+          </TabsTrigger>
           <TabsTrigger value="logs" className="data-[state=active]:bg-muted gap-1.5">
             <Terminal className="h-3.5 w-3.5" />
             Live Logs
@@ -172,6 +177,10 @@ export function CommandCenter() {
 
         <TabsContent value="status" className="mt-4">
           <InventoryCards items={inventory} />
+        </TabsContent>
+
+        <TabsContent value="analytics" className="mt-4">
+          <InventoryCharts items={inventory} />
         </TabsContent>
 
         <TabsContent value="logs" className="mt-4">

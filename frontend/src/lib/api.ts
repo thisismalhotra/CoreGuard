@@ -13,7 +13,9 @@ export type InventoryItem = {
   on_hand: number;
   safety_stock: number;
   reserved: number;
+  ring_fenced: number;
   available: number;
+  daily_burn_rate: number;
   supplier: string | null;
 };
 
