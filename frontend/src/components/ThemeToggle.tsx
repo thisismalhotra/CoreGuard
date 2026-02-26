@@ -16,6 +16,8 @@ export function ThemeToggle() {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
+  // Hydration guard: set mounted flag once client-side rendering begins.
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- standard hydration pattern
   useEffect(() => setMounted(true), []);
 
   // Close dropdown when clicking outside

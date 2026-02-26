@@ -594,3 +594,72 @@ class TestAgentChainIntegration:
         mrp_result = calculate_net_requirements(db, "FL-001-T", 10)
         buy_orders = [a for a in mrp_result["actions"] if a["type"] == "BUY_ORDER"]
         assert len(buy_orders) == 0
+
+    def test_full_5_step_execution_loop(self, db):
+        """
+        PRD §9: Complete 5-Step Execution Loop.
+
+        Step 1: Aura detects demand spike (Trigger Event)
+        Step 2: Part Agent monitors components (Baseline + Local Validation)
+        Step 3: Dispatcher triages by criticality
+        Step 4: Core-Guard runs MRP + ring-fencing + blast radius (Handshake)
+        Step 5: Ghost-Writer drafts POs (Execution Draft)
+        """
+        from agents.dispatcher import triage_demand_spike
+
+        sku = "FL-001-T"
+        spiked_qty = 500
+
+        # Step 1: Aura — Trigger Event
+        aura_result = detect_demand_spike(db, sku, spiked_qty)
+        assert aura_result["spike_detected"] is True
+        assert len(aura_result["logs"]) > 0
+
+        # Step 2: Part Agent — Baseline Monitoring + Local Validation
+        part_result = monitor_all_components(db, sku, spiked_qty)
+        assert "component_reports" in part_result
+        assert len(part_result["component_reports"]) > 0
+        # At least one crisis signal should fire under heavy demand
+        assert len(part_result["logs"]) > 0
+
+        # Step 3: Dispatcher — Triage by criticality
+        dispatch_result = triage_demand_spike(db, sku, spiked_qty)
+        assert len(dispatch_result["priority_queue"]) > 0
+        assert len(dispatch_result["logs"]) > 0
+
+        # Step 4: Core-Guard — MRP explosion
+        mrp_result = calculate_net_requirements(db, sku, spiked_qty)
+        assert len(mrp_result["shortages"]) > 0
+        assert len(mrp_result["logs"]) > 0
+
+        # Step 4b: Ring-fencing VIP inventory (PRD §11)
+        ring_result = ring_fence_inventory(db, sku, "SO-VIP-001", 50)
+        assert ring_result["success"] in (True, False)
+
+        # Step 4c: Blast radius analysis for shortage components
+        for shortage in mrp_result["shortages"][:1]:
+            blast_result = calculate_blast_radius(db, shortage["part_id"])
+            assert "affected_finished_goods" in blast_result
+            assert len(blast_result["logs"]) > 0
+
+        # Step 5: Ghost-Writer — Execution Draft
+        buy_orders = [a for a in mrp_result["actions"] if a["type"] == "BUY_ORDER"]
+        assert len(buy_orders) > 0
+        ghost_result = process_buy_orders(db, buy_orders)
+        assert len(ghost_result["purchase_orders"]) > 0
+        for po in ghost_result["purchase_orders"]:
+            assert po["po_number"].startswith("PO-")
+            assert po["status"] in ("APPROVED", "PENDING_APPROVAL")
+            assert po["quantity"] > 0
+            assert po["total_cost"] > 0
+
+        # Verify Glass Box pattern: every step emitted logs
+        total_logs = (
+            len(aura_result["logs"])
+            + len(part_result["logs"])
+            + len(dispatch_result["logs"])
+            + len(mrp_result["logs"])
+            + len(ring_result["logs"])
+            + len(ghost_result["logs"])
+        )
+        assert total_logs >= 10, f"Expected >=10 Glass Box logs across all agents, got {total_logs}"

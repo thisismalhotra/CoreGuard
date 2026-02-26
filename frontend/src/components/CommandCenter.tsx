@@ -52,6 +52,8 @@ export function CommandCenter() {
   }, []);
 
   useEffect(() => {
+    // Initial data fetch on mount — calls setInventory/setKPIs/setLogs
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional init fetch
     refreshData();
 
     const socket = getSocket();
