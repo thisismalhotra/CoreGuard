@@ -27,6 +27,7 @@ from schemas import (
     SpikeResponse, SupplyShockResponse, QualityFailResponse,
     CascadeFailureResponse, ConstitutionBreachResponse,
     FullBlackoutResponse, SlowBleedResponse, InventoryDecayResponse,
+    MultiSkuContentionResponse,
     ResetResponse,
 )
 
@@ -984,6 +985,221 @@ async def simulate_inventory_decay(
         "ghost_parts": ghost_parts,
         "suspect_parts": suspect_parts,
         "corrected_runway": corrected_runway,
+        "procurement": ghost_result["purchase_orders"],
+        "logs": all_logs,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Scenario I: Multi-SKU Contention
+# ---------------------------------------------------------------------------
+
+@router.post("/multi-sku-contention", response_model=MultiSkuContentionResponse)
+async def simulate_multi_sku_contention(
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """
+    Scenario I: Multi-SKU Contention — two products compete for shared components.
+
+    FL-001-T (Tactical) demands 200 units, FL-001-S (Standard) demands 300 units.
+    CH-101 is shared: 2x per Tactical, 1x per Standard = 700 chassis needed total.
+
+    4-act story:
+      Act 1: Part Agent monitors CH-101 for FL-001-T demand — looks manageable.
+      Act 2: Part Agent monitors CH-101 for FL-001-S demand — still looks ok.
+      Act 3: Contention detected — combined burn rate overwhelms CH-101 runway.
+      Act 4: Core-Guard applies criticality-based prioritization and procures.
+    """
+    all_logs: list[dict[str, str]] = []
+
+    tactical_demand = 200
+    standard_demand = 300
+    shared_component = "CH-101"
+
+    log = _sys_log(
+        db,
+        f"MULTI-SKU CONTENTION INITIATED: FL-001-T ({tactical_demand} units) and "
+        f"FL-001-S ({standard_demand} units) competing for shared component {shared_component}.",
+        "warning",
+    )
+    all_logs.append(log)
+    await emit_logs([log])
+
+    # ---------------------------------------------------------------
+    # Act 1: Part Agent monitors CH-101 for FL-001-T demand
+    # ---------------------------------------------------------------
+    log = _sys_log(db, "Act 1: Part Agent monitoring CH-101 for FL-001-T demand (200 units × 2 per = 400 chassis)...", "info")
+    all_logs.append(log)
+    await emit_logs([log])
+
+    tactical_result = monitor_all_components(db, "FL-001-T", tactical_demand)
+    all_logs.extend(tactical_result["logs"])
+    await emit_logs(tactical_result["logs"])
+
+    log = _sys_log(
+        db,
+        f"Act 1 complete: FL-001-T alone — {len(tactical_result['crisis_signals'])} crisis signal(s). "
+        f"CH-101 looks {'stressed' if tactical_result['crisis_signals'] else 'manageable'}.",
+        "warning" if tactical_result["crisis_signals"] else "success",
+    )
+    all_logs.append(log)
+    await emit_logs([log])
+
+    # ---------------------------------------------------------------
+    # Act 2: Part Agent monitors CH-101 for FL-001-S demand
+    # ---------------------------------------------------------------
+    log = _sys_log(db, "Act 2: Part Agent monitoring CH-101 for FL-001-S demand (300 units × 1 per = 300 chassis)...", "info")
+    all_logs.append(log)
+    await emit_logs([log])
+
+    standard_result = monitor_all_components(db, "FL-001-S", standard_demand)
+    all_logs.extend(standard_result["logs"])
+    await emit_logs(standard_result["logs"])
+
+    log = _sys_log(
+        db,
+        f"Act 2 complete: FL-001-S alone — {len(standard_result['crisis_signals'])} crisis signal(s). "
+        f"CH-101 looks {'stressed' if standard_result['crisis_signals'] else 'ok in isolation'}.",
+        "warning" if standard_result["crisis_signals"] else "success",
+    )
+    all_logs.append(log)
+    await emit_logs([log])
+
+    # ---------------------------------------------------------------
+    # Act 3: Detect contention — combined burn rate from both SKUs
+    # ---------------------------------------------------------------
+    log = _sys_log(
+        db,
+        "Act 3: CONTENTION DETECTION — calculating combined burn rate from both SKUs on CH-101...",
+        "warning",
+    )
+    all_logs.append(log)
+    await emit_logs([log])
+
+    ch101_inv = db.query(Inventory).join(Part).filter(Part.part_id == shared_component).first()
+    if not ch101_inv:
+        raise HTTPException(status_code=404, detail=f"No inventory record for {shared_component}")
+
+    original_burn_rate = ch101_inv.daily_burn_rate
+
+    # Combined daily burn: (200 Tactical × 2 chassis + 300 Standard × 1 chassis) / 30 days
+    combined_additional_burn = (tactical_demand * 2 + standard_demand * 1) / 30.0
+    contention_burn_rate = original_burn_rate + combined_additional_burn
+
+    ch101_inv.daily_burn_rate = contention_burn_rate
+    db.flush()
+
+    log = _sys_log(
+        db,
+        f"Combined burn rate for {shared_component}: {original_burn_rate:.1f}/day → {contention_burn_rate:.1f}/day "
+        f"(+{combined_additional_burn:.1f} from {tactical_demand}×2 + {standard_demand}×1 = 700 chassis over 30 days).",
+        "error",
+        agent="Part-Agent",
+    )
+    all_logs.append(log)
+    await emit_logs([log])
+
+    # Run Part Agent on the contended component
+    contention_result = monitor_part(db, shared_component)
+    all_logs.extend(contention_result["logs"])
+    await emit_logs(contention_result["logs"])
+
+    log = _sys_log(
+        db,
+        f"CONTENTION DETECTED: {shared_component} runway under combined demand: "
+        f"{contention_result['runway_days']}d. "
+        f"Handshake {'TRIGGERED' if contention_result['handshake_triggered'] else 'not triggered'}.",
+        "error" if contention_result["handshake_triggered"] else "warning",
+        agent="Part-Agent",
+    )
+    all_logs.append(log)
+    await emit_logs([log])
+
+    # Restore original burn rate
+    ch101_inv.daily_burn_rate = original_burn_rate
+    db.flush()
+
+    # ---------------------------------------------------------------
+    # Act 4: Core-Guard applies criticality-based prioritization
+    # ---------------------------------------------------------------
+    log = _sys_log(
+        db,
+        "Act 4: Core-Guard applying criticality-based prioritization for contending SKUs...",
+        "info",
+    )
+    all_logs.append(log)
+    await emit_logs([log])
+
+    # FL-001-T is HIGH criticality (priority 1), FL-001-S is MEDIUM (priority 2)
+    fl001t = db.query(Part).filter(Part.part_id == "FL-001-T").first()
+    fl001s = db.query(Part).filter(Part.part_id == "FL-001-S").first()
+
+    prioritization = []
+    if fl001t:
+        prioritization.append({
+            "sku": "FL-001-T",
+            "description": fl001t.description,
+            "criticality": fl001t.criticality.value,
+            "priority": 1,
+            "demand": tactical_demand,
+            "chassis_needed": tactical_demand * 2,
+        })
+    if fl001s:
+        prioritization.append({
+            "sku": "FL-001-S",
+            "description": fl001s.description,
+            "criticality": fl001s.criticality.value,
+            "priority": 2,
+            "demand": standard_demand,
+            "chassis_needed": standard_demand * 1,
+        })
+
+    for item in prioritization:
+        log = _sys_log(
+            db,
+            f"Priority {item['priority']}: {item['sku']} ({item['description']}) — "
+            f"criticality [{item['criticality']}], "
+            f"demand {item['demand']} units → {item['chassis_needed']} chassis needed.",
+            "info",
+            agent="Core-Guard",
+        )
+        all_logs.append(log)
+        await emit_logs([log])
+
+    # Run MRP for combined demand (total chassis needed = 700)
+    combined_demand = tactical_demand + standard_demand
+    mrp_result = calculate_net_requirements(db, "FL-001-T", combined_demand)
+    all_logs.extend(mrp_result["logs"])
+    await emit_logs(mrp_result["logs"])
+
+    # Ghost-Writer processes buy orders
+    buy_orders = [a for a in mrp_result["actions"] if a["type"] == "BUY_ORDER"]
+    ghost_result: dict[str, Any] = {"purchase_orders": [], "logs": []}
+    if buy_orders:
+        ghost_result = process_buy_orders(db, buy_orders)
+        all_logs.extend(ghost_result["logs"])
+        await emit_logs(ghost_result["logs"])
+
+    summary = _sys_log(
+        db,
+        f"Multi-SKU Contention simulation complete: "
+        f"FL-001-T ({tactical_demand}) + FL-001-S ({standard_demand}) = {combined_demand} units total. "
+        f"700 chassis needed, {len(ghost_result['purchase_orders'])} PO(s) generated.",
+        "success" if ghost_result["purchase_orders"] else "warning",
+    )
+    all_logs.append(summary)
+    await emit_logs([summary])
+
+    # Single atomic commit
+    db.commit()
+
+    return {
+        "status": "simulation_complete",
+        "scenario": "MULTI_SKU_CONTENTION",
+        "contending_skus": ["FL-001-T", "FL-001-S"],
+        "shared_component": shared_component,
+        "combined_demand": combined_demand,
+        "prioritization": prioritization,
         "procurement": ghost_result["purchase_orders"],
         "logs": all_logs,
     }

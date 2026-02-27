@@ -546,6 +546,39 @@ class TestInventoryDecayScenario:
         assert result_after["handshake_triggered"] is True
 
 
+class TestMultiSkuContentionScenario:
+    """Test Scenario I: Multi-SKU Contention — two products compete for shared components."""
+
+    def test_combined_burn_rate_exceeds_individual(self, db):
+        """When two SKUs share a component, combined burn rate should exceed either individual."""
+        from agents.part_agent import monitor_part
+
+        inv = db.query(Inventory).join(Part).filter(Part.part_id == "CH-101").first()
+
+        result_solo = monitor_part(db, "CH-101")
+        solo_runway = result_solo["runway_days"]
+
+        inv.daily_burn_rate = inv.daily_burn_rate * 2
+        db.flush()
+        result_combined = monitor_part(db, "CH-101")
+        combined_runway = result_combined["runway_days"]
+
+        assert combined_runway < solo_runway
+
+    def test_contention_triggers_handshake_when_solo_is_safe(self, db):
+        """A component safe for one SKU may trigger handshake under multi-SKU contention."""
+        from agents.part_agent import monitor_part
+
+        inv = db.query(Inventory).join(Part).filter(Part.part_id == "CH-101").first()
+
+        result_solo = monitor_part(db, "CH-101")
+
+        inv.daily_burn_rate = inv.daily_burn_rate * 3
+        db.flush()
+        result_contention = monitor_part(db, "CH-101")
+        assert result_contention["handshake_triggered"] is True
+
+
 class TestPartAgentFormulas:
     """Test Part Agent pure math functions (PRD §8)."""
 
