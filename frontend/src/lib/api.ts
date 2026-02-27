@@ -94,6 +94,15 @@ export const api = {
     fetchJSON<Record<string, unknown>>("/api/simulate/constitution-breach", { method: "POST" }),
   simulateFullBlackout: () =>
     fetchJSON<Record<string, unknown>>("/api/simulate/full-blackout", { method: "POST" }),
+  simulateSlowBleed: (partId = "CH-101") =>
+    fetchJSON<Record<string, unknown>>(
+      `/api/simulate/slow-bleed?part_id=${partId}`,
+      { method: "POST" }
+    ),
+  simulateInventoryDecay: () =>
+    fetchJSON<Record<string, unknown>>("/api/simulate/inventory-decay", { method: "POST" }),
+  simulateMultiSkuContention: () =>
+    fetchJSON<Record<string, unknown>>("/api/simulate/multi-sku-contention", { method: "POST" }),
   updateOrderStatus: (poNumber: string, status: "APPROVED" | "CANCELLED") =>
     fetchJSON<PurchaseOrder>(`/api/orders/${poNumber}`, {
       method: "PATCH",
