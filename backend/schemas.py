@@ -218,6 +218,38 @@ class FullBlackoutResponse(BaseModel):
     logs: list[GlassBoxLog]
 
 
+class SlowBleedResponse(BaseModel):
+    status: str
+    scenario: str = "SLOW_BLEED"
+    part_id: str
+    days_simulated: int
+    runway_progression: list[dict[str, Any]]
+    handshake_triggered: bool
+    procurement: list[PurchaseOrderSummary]
+    logs: list[GlassBoxLog]
+
+
+class InventoryDecayResponse(BaseModel):
+    status: str
+    scenario: str = "INVENTORY_DECAY"
+    ghost_parts: list[dict[str, Any]]
+    suspect_parts: list[dict[str, Any]]
+    corrected_runway: dict[str, Any]
+    procurement: list[PurchaseOrderSummary]
+    logs: list[GlassBoxLog]
+
+
+class MultiSkuContentionResponse(BaseModel):
+    status: str
+    scenario: str = "MULTI_SKU_CONTENTION"
+    contending_skus: list[str]
+    shared_component: str
+    combined_demand: int
+    prioritization: list[dict[str, Any]]
+    procurement: list[PurchaseOrderSummary]
+    logs: list[GlassBoxLog]
+
+
 class ResetResponse(BaseModel):
     status: str
     message: str
