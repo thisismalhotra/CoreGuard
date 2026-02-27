@@ -490,6 +490,39 @@ class TestDataIntegrity:
         assert len(result["logs"]) > 0
 
 
+class TestSlowBleedScenario:
+    """Test Scenario G: Slow Bleed — gradual burn rate increase detected by Part Agent."""
+
+    def test_slow_bleed_detects_runway_decline(self, db):
+        """Part Agent should detect runway declining across simulated days."""
+        from agents.part_agent import monitor_part, calculate_runway
+
+        inv = db.query(Inventory).join(Part).filter(Part.part_id == "CH-101").first()
+        burn_rates = [40.0, 55.0, 70.0, 85.0]
+        runways = []
+
+        for rate in burn_rates:
+            inv.daily_burn_rate = rate
+            db.flush()
+            result = monitor_part(db, "CH-101")
+            runways.append(result["runway_days"])
+
+        for i in range(1, len(runways)):
+            assert runways[i] < runways[i - 1], f"Runway should decline: {runways}"
+
+    def test_slow_bleed_triggers_handshake(self, db):
+        """At high enough burn rate, Part Agent handshake should fire."""
+        from agents.part_agent import monitor_part
+
+        inv = db.query(Inventory).join(Part).filter(Part.part_id == "CH-101").first()
+        inv.daily_burn_rate = 85.0
+        db.flush()
+
+        result = monitor_part(db, "CH-101")
+        assert result["handshake_triggered"] is True
+        assert result["crisis_signal"] is not None
+
+
 class TestPartAgentFormulas:
     """Test Part Agent pure math functions (PRD §8)."""
 

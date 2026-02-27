@@ -14,11 +14,11 @@ from sqlalchemy.orm import Session
 
 from database.connection import get_db, engine
 from database.models import (
-    Part, Supplier, DemandForecast, AgentLog, Base,
+    Part, Supplier, DemandForecast, AgentLog, Base, BOMEntry,
 )
 from agents.aura import detect_demand_spike
 from agents.dispatcher import triage_demand_spike
-from agents.part_agent import monitor_all_components
+from agents.part_agent import monitor_all_components, monitor_part
 from agents.core_guard import calculate_net_requirements, calculate_blast_radius, ring_fence_inventory
 from agents.ghost_writer import process_buy_orders
 from agents.eagle_eye import inspect_batch
@@ -26,7 +26,7 @@ from agents.data_integrity import run_full_integrity_check
 from schemas import (
     SpikeResponse, SupplyShockResponse, QualityFailResponse,
     CascadeFailureResponse, ConstitutionBreachResponse,
-    FullBlackoutResponse, ResetResponse,
+    FullBlackoutResponse, SlowBleedResponse, ResetResponse,
 )
 
 router = APIRouter(prefix="/api/simulate", tags=["simulations"])
@@ -605,6 +605,168 @@ async def simulate_full_blackout(
         "scenario": "FULL_BLACKOUT",
         "suppliers_offline": len(all_suppliers),
         "unresolved_shortages": mrp_result["shortages"],
+        "logs": all_logs,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Scenario G: Slow Bleed
+# ---------------------------------------------------------------------------
+
+@router.post("/slow-bleed", response_model=SlowBleedResponse)
+async def simulate_slow_bleed(
+    part_id: str = Query(default="CH-101", description="Part ID to simulate slow bleed on"),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """
+    Scenario G: Simulate a gradual burn rate increase (Slow Bleed).
+
+    The Part Agent is the ONLY agent that detects this invisible crisis —
+    no demand spike, no supplier failure — just a creeping burn rate increase
+    that erodes runway day by day.
+    """
+    all_logs: list[dict[str, str]] = []
+
+    # Locate the part and its inventory
+    part = db.query(Part).filter(Part.part_id == part_id).first()
+    if not part:
+        raise HTTPException(status_code=404, detail=f"Part '{part_id}' not found")
+
+    inv = part.inventory
+    if not inv:
+        raise HTTPException(status_code=404, detail=f"No inventory record for '{part_id}'")
+
+    log = _sys_log(
+        db,
+        f"SLOW BLEED INITIATED: Simulating gradual burn rate increase on {part_id} ({part.description}).",
+        "warning",
+    )
+    all_logs.append(log)
+    await emit_logs([log])
+
+    original_burn_rate = inv.daily_burn_rate
+    # 4 simulated "days" of increasing burn rate: 1x, 1.375x, 1.75x, 2.125x
+    multipliers = [1.0, 1.375, 1.75, 2.125]
+    runway_progression: list[dict[str, Any]] = []
+    handshake_triggered = False
+    crisis_signal: dict[str, Any] | None = None
+
+    for day_num, mult in enumerate(multipliers, start=1):
+        simulated_rate = round(original_burn_rate * mult, 2)
+        inv.daily_burn_rate = simulated_rate
+        db.flush()
+
+        log = _sys_log(
+            db,
+            f"Day {day_num}: Burn rate for {part_id} now {simulated_rate}/day "
+            f"({mult:.3f}x baseline {original_burn_rate}/day).",
+            "info",
+            agent="Part-Agent",
+        )
+        all_logs.append(log)
+        await emit_logs([log])
+
+        # Part Agent monitors the SKU
+        result = monitor_part(db, part_id)
+        all_logs.extend(result["logs"])
+        await emit_logs(result["logs"])
+
+        runway_progression.append({
+            "day": day_num,
+            "burn_rate": simulated_rate,
+            "runway_days": result["runway_days"],
+            "handshake_triggered": result["handshake_triggered"],
+        })
+
+        if result["handshake_triggered"] and not handshake_triggered:
+            handshake_triggered = True
+            crisis_signal = result["crisis_signal"]
+
+            log = _sys_log(
+                db,
+                f"SLOW BLEED DETECTED on Day {day_num}: Part Agent identified runway decline for {part_id}. "
+                f"Burn rate crept from {original_burn_rate}/day to {simulated_rate}/day. "
+                f"Escalating to Core-Guard.",
+                "error",
+                agent="Part-Agent",
+            )
+            all_logs.append(log)
+            await emit_logs([log])
+
+    # If handshake triggered: find parent finished good via BOM, run MRP + procurement
+    ghost_result: dict[str, Any] = {"purchase_orders": [], "logs": []}
+
+    if handshake_triggered:
+        # Find the parent finished good that uses this part
+        bom_entry = db.query(BOMEntry).filter(BOMEntry.component_id == part.id).first()
+        if bom_entry:
+            parent_part = bom_entry.parent
+            parent_sku = parent_part.part_id
+
+            log = _sys_log(
+                db,
+                f"Tracing {part_id} upstream via BOM → parent finished good: {parent_sku} ({parent_part.description}).",
+                "info",
+                agent="Core-Guard",
+            )
+            all_logs.append(log)
+            await emit_logs([log])
+
+            # Run Core-Guard MRP for the parent SKU with current demand
+            forecast = (
+                db.query(DemandForecast)
+                .join(Part)
+                .filter(Part.part_id == parent_sku)
+                .first()
+            )
+            demand_qty = forecast.forecast_qty if forecast else 200
+
+            mrp_result = calculate_net_requirements(db, parent_sku, demand_qty)
+            all_logs.extend(mrp_result["logs"])
+            await emit_logs(mrp_result["logs"])
+
+            # Ghost-Writer processes any buy orders
+            buy_orders = [a for a in mrp_result["actions"] if a["type"] == "BUY_ORDER"]
+            if buy_orders:
+                ghost_result = process_buy_orders(db, buy_orders)
+                all_logs.extend(ghost_result["logs"])
+                await emit_logs(ghost_result["logs"])
+        else:
+            log = _sys_log(
+                db,
+                f"No parent finished good found for {part_id} in BOM. Cannot escalate upstream.",
+                "warning",
+                agent="Core-Guard",
+            )
+            all_logs.append(log)
+            await emit_logs([log])
+
+    # Restore original burn rate
+    inv.daily_burn_rate = original_burn_rate
+    db.flush()
+
+    summary_msg = (
+        f"Slow Bleed simulation complete for {part_id}: "
+        f"{len(multipliers)} days simulated, "
+        f"handshake {'TRIGGERED' if handshake_triggered else 'not triggered'}, "
+        f"{len(ghost_result['purchase_orders'])} PO(s) generated. "
+        f"Burn rate restored to {original_burn_rate}/day."
+    )
+    log = _sys_log(db, summary_msg, "success" if not handshake_triggered else "warning")
+    all_logs.append(log)
+    await emit_logs([log])
+
+    # Single atomic commit
+    db.commit()
+
+    return {
+        "status": "simulation_complete",
+        "scenario": "SLOW_BLEED",
+        "part_id": part_id,
+        "days_simulated": len(multipliers),
+        "runway_progression": runway_progression,
+        "handshake_triggered": handshake_triggered,
+        "procurement": ghost_result["purchase_orders"],
         "logs": all_logs,
     }
 
