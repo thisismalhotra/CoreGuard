@@ -6,7 +6,7 @@ logs to connected dashboards via Socket.io.
 """
 
 import asyncio
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session
 
 from database.connection import get_db, engine
 from database.models import (
-    Part, Supplier, DemandForecast, AgentLog, Base, BOMEntry,
+    Part, Supplier, DemandForecast, AgentLog, Base, BOMEntry, Inventory,
 )
 from agents.aura import detect_demand_spike
 from agents.dispatcher import triage_demand_spike
@@ -26,7 +26,8 @@ from agents.data_integrity import run_full_integrity_check
 from schemas import (
     SpikeResponse, SupplyShockResponse, QualityFailResponse,
     CascadeFailureResponse, ConstitutionBreachResponse,
-    FullBlackoutResponse, SlowBleedResponse, ResetResponse,
+    FullBlackoutResponse, SlowBleedResponse, InventoryDecayResponse,
+    ResetResponse,
 )
 
 router = APIRouter(prefix="/api/simulate", tags=["simulations"])
@@ -766,6 +767,223 @@ async def simulate_slow_bleed(
         "days_simulated": len(multipliers),
         "runway_progression": runway_progression,
         "handshake_triggered": handshake_triggered,
+        "procurement": ghost_result["purchase_orders"],
+        "logs": all_logs,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Scenario H: Inventory Decay
+# ---------------------------------------------------------------------------
+
+@router.post("/inventory-decay", response_model=InventoryDecayResponse)
+async def simulate_inventory_decay(
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """
+    Scenario H: Inventory Decay — Ghost inventory and stale stock detection.
+
+    3-act story:
+      Act 1: Part Agent runs baseline check — everything looks fine.
+      Act 2: Inject decay conditions, Data Integrity reveals ghost/suspect stock.
+      Act 3: Part Agent re-evaluates with corrected inventory, triggers crisis if needed.
+    """
+    all_logs: list[dict[str, str]] = []
+
+    log = _sys_log(
+        db,
+        "INVENTORY DECAY INITIATED: Checking FL-001-T components for ghost and suspect inventory.",
+        "warning",
+    )
+    all_logs.append(log)
+    await emit_logs([log])
+
+    # ---------------------------------------------------------------
+    # Act 1: Part Agent runs baseline check — everything looks fine
+    # ---------------------------------------------------------------
+    log = _sys_log(db, "Act 1: Part Agent baseline check on FL-001-T components...", "info")
+    all_logs.append(log)
+    await emit_logs([log])
+
+    baseline_result = monitor_all_components(db, "FL-001-T", 100)
+    all_logs.extend(baseline_result["logs"])
+    await emit_logs(baseline_result["logs"])
+
+    log = _sys_log(
+        db,
+        f"Baseline complete: {len(baseline_result['component_reports'])} components checked, "
+        f"{len(baseline_result['crisis_signals'])} crisis signals. System looks healthy.",
+        "success",
+    )
+    all_logs.append(log)
+    await emit_logs([log])
+
+    # ---------------------------------------------------------------
+    # Act 2: Inject decay conditions — Data Integrity reveals the truth
+    # ---------------------------------------------------------------
+    log = _sys_log(db, "Act 2: Injecting inventory decay conditions...", "warning")
+    all_logs.append(log)
+    await emit_logs([log])
+
+    # Save original values for restoration
+    ch101_inv = db.query(Inventory).join(Part).filter(Part.part_id == "CH-101").first()
+    lns505_inv = db.query(Inventory).join(Part).filter(Part.part_id == "LNS-505").first()
+
+    original_ch101_consumption_date = ch101_inv.last_consumption_date if ch101_inv else None
+    original_lns505_last_updated = lns505_inv.last_updated if lns505_inv else None
+
+    # CH-101: Set last_consumption_date to 30 days ago (ghost: burn rate > 0 but no consumption)
+    if ch101_inv:
+        ch101_inv.last_consumption_date = datetime.now(timezone.utc) - timedelta(days=30)
+        db.flush()
+        log = _sys_log(
+            db,
+            f"Decay injected: CH-101 last_consumption_date set to 30 days ago "
+            f"(ghost: burn rate {ch101_inv.daily_burn_rate}/day but no recorded consumption).",
+            "warning",
+            agent="System",
+        )
+        all_logs.append(log)
+        await emit_logs([log])
+
+    # LNS-505: Set last_updated to 200 days ago (suspect: no movement for 6+ months)
+    if lns505_inv:
+        lns505_inv.last_updated = datetime.now(timezone.utc) - timedelta(days=200)
+        db.flush()
+        log = _sys_log(
+            db,
+            f"Decay injected: LNS-505 last_updated set to 200 days ago "
+            f"(suspect: no inventory movement for 6+ months).",
+            "warning",
+            agent="System",
+        )
+        all_logs.append(log)
+        await emit_logs([log])
+
+    # Run Data Integrity full check
+    log = _sys_log(db, "Running Data Integrity Agent full scan...", "info", agent="Data-Integrity")
+    all_logs.append(log)
+    await emit_logs([log])
+
+    integrity_result = run_full_integrity_check(db)
+    all_logs.extend(integrity_result["logs"])
+    await emit_logs(integrity_result["logs"])
+
+    ghost_parts = integrity_result["ghost"]["ghost_parts"]
+    suspect_parts = integrity_result["suspect"]["suspect_parts"]
+
+    log = _sys_log(
+        db,
+        f"Data Integrity reveals: {len(ghost_parts)} ghost part(s), "
+        f"{len(suspect_parts)} suspect part(s). Inventory cannot be trusted as-is.",
+        "error" if (ghost_parts or suspect_parts) else "success",
+    )
+    all_logs.append(log)
+    await emit_logs([log])
+
+    # ---------------------------------------------------------------
+    # Act 3: Part Agent re-evaluates with corrected inventory
+    # ---------------------------------------------------------------
+    log = _sys_log(
+        db,
+        "Act 3: Applying ghost discount (50% reduction) and re-evaluating...",
+        "warning",
+    )
+    all_logs.append(log)
+    await emit_logs([log])
+
+    # For ghost parts, reduce on_hand by 50% (ghost discount pending physical count)
+    original_on_hand_values: dict[str, int] = {}
+    for ghost in ghost_parts:
+        ghost_inv = db.query(Inventory).join(Part).filter(Part.part_id == ghost["part_id"]).first()
+        if ghost_inv:
+            original_on_hand_values[ghost["part_id"]] = ghost_inv.on_hand
+            ghost_inv.on_hand = ghost_inv.on_hand // 2
+            db.flush()
+            log = _sys_log(
+                db,
+                f"Ghost discount applied: {ghost['part_id']} on_hand reduced from "
+                f"{original_on_hand_values[ghost['part_id']]} to {ghost_inv.on_hand} "
+                f"(50% reduction pending physical count).",
+                "warning",
+                agent="Data-Integrity",
+            )
+            all_logs.append(log)
+            await emit_logs([log])
+
+    # Re-run Part Agent monitoring with corrected numbers
+    corrected_result = monitor_all_components(db, "FL-001-T", 100)
+    all_logs.extend(corrected_result["logs"])
+    await emit_logs(corrected_result["logs"])
+
+    # Build corrected runway info
+    corrected_runway: dict[str, Any] = {
+        "component_reports": corrected_result["component_reports"],
+        "crisis_signals": corrected_result["crisis_signals"],
+    }
+
+    # If crisis signals fire, run MRP + procurement
+    ghost_result: dict[str, Any] = {"purchase_orders": [], "logs": []}
+    if corrected_result["crisis_signals"]:
+        log = _sys_log(
+            db,
+            f"CRISIS DETECTED: {len(corrected_result['crisis_signals'])} component(s) in crisis "
+            f"after ghost inventory correction. Escalating to Core-Guard.",
+            "error",
+            agent="Part-Agent",
+        )
+        all_logs.append(log)
+        await emit_logs([log])
+
+        from agents.core_guard import calculate_net_requirements
+        from agents.ghost_writer import process_buy_orders
+
+        forecast = db.query(DemandForecast).join(Part).filter(Part.part_id == "FL-001-T").first()
+        demand_qty = forecast.forecast_qty if forecast else 100
+
+        mrp_result = calculate_net_requirements(db, "FL-001-T", demand_qty)
+        all_logs.extend(mrp_result["logs"])
+        await emit_logs(mrp_result["logs"])
+
+        buy_orders = [a for a in mrp_result["actions"] if a["type"] == "BUY_ORDER"]
+        if buy_orders:
+            ghost_result = process_buy_orders(db, buy_orders)
+            all_logs.extend(ghost_result["logs"])
+            await emit_logs(ghost_result["logs"])
+
+    # ---------------------------------------------------------------
+    # Restore original values
+    # ---------------------------------------------------------------
+    if ch101_inv:
+        ch101_inv.last_consumption_date = original_ch101_consumption_date
+    if lns505_inv:
+        lns505_inv.last_updated = original_lns505_last_updated
+    for part_id_str, original_oh in original_on_hand_values.items():
+        restored_inv = db.query(Inventory).join(Part).filter(Part.part_id == part_id_str).first()
+        if restored_inv:
+            restored_inv.on_hand = original_oh
+    db.flush()
+
+    summary = _sys_log(
+        db,
+        f"Inventory Decay simulation complete: "
+        f"{len(ghost_parts)} ghost part(s), {len(suspect_parts)} suspect part(s) detected. "
+        f"{len(ghost_result['purchase_orders'])} PO(s) generated. "
+        f"Original inventory values restored.",
+        "success" if not ghost_parts and not suspect_parts else "warning",
+    )
+    all_logs.append(summary)
+    await emit_logs([summary])
+
+    # Single atomic commit
+    db.commit()
+
+    return {
+        "status": "simulation_complete",
+        "scenario": "INVENTORY_DECAY",
+        "ghost_parts": ghost_parts,
+        "suspect_parts": suspect_parts,
+        "corrected_runway": corrected_runway,
         "procurement": ghost_result["purchase_orders"],
         "logs": all_logs,
     }

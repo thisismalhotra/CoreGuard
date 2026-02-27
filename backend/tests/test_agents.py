@@ -523,6 +523,29 @@ class TestSlowBleedScenario:
         assert result["crisis_signal"] is not None
 
 
+class TestInventoryDecayScenario:
+    """Test Scenario H: Inventory Decay — Part Agent + Data Integrity find ghost/stale stock."""
+
+    def test_ghost_inventory_changes_runway(self, db):
+        """After ghost detection, recalculated runway should reflect corrected inventory."""
+        from datetime import datetime, timezone, timedelta
+        from agents.part_agent import monitor_part
+
+        inv = db.query(Inventory).join(Part).filter(Part.part_id == "CH-101").first()
+        inv.last_consumption_date = datetime.now(timezone.utc) - timedelta(days=30)
+        db.flush()
+
+        result_before = monitor_part(db, "CH-101")
+        assert result_before["runway_days"] is not None
+        assert result_before["runway_days"] > 0
+
+        inv.on_hand = 0
+        db.flush()
+        result_after = monitor_part(db, "CH-101")
+        assert result_after["runway_days"] == 0.0
+        assert result_after["handshake_triggered"] is True
+
+
 class TestPartAgentFormulas:
     """Test Part Agent pure math functions (PRD §8)."""
 
