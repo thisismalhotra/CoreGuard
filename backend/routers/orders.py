@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 
 from database.connection import get_db
 from database.models import PurchaseOrder, Part, Supplier, OrderStatus, AgentLog
+from rate_limit import limiter
 from schemas import PurchaseOrderResponse, CreatePurchaseOrderRequest, UpdateOrderStatusRequest
 
 router = APIRouter(prefix="/api", tags=["orders"])
@@ -19,7 +20,8 @@ FINANCIAL_CONSTITUTION_MAX_SPEND = 5000.00
 
 
 @router.get("/orders", response_model=list[PurchaseOrderResponse])
-def get_orders(db: Session = Depends(get_db)) -> list[dict]:
+@limiter.limit("60/minute")
+def get_orders(request: Request, db: Session = Depends(get_db)) -> list[dict]:
     """Return all purchase orders."""
     orders = db.query(PurchaseOrder).order_by(PurchaseOrder.created_at.desc()).all()
     return [
@@ -39,7 +41,9 @@ def get_orders(db: Session = Depends(get_db)) -> list[dict]:
 
 
 @router.post("/orders", response_model=PurchaseOrderResponse)
+@limiter.limit("60/minute")
 def create_order(
+    request: Request,
     body: CreatePurchaseOrderRequest,
     db: Session = Depends(get_db),
 ) -> dict:
@@ -94,6 +98,7 @@ def create_order(
 
 
 @router.patch("/orders/{po_number}", response_model=PurchaseOrderResponse)
+@limiter.limit("60/minute")
 async def update_order_status(
     po_number: str,
     body: UpdateOrderStatusRequest,

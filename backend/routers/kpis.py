@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from database.connection import get_db
 from database.models import Inventory, PurchaseOrder, AgentLog
+from rate_limit import limiter
 from schemas import KPIsResponse, LogDelayResponse, GlassBoxLog
 
 router = APIRouter(prefix="/api", tags=["kpis"])
@@ -18,7 +19,8 @@ def get_log_delay(request: Request) -> float:
 
 
 @router.get("/kpis", response_model=KPIsResponse)
-def get_kpis(db: Session = Depends(get_db)) -> dict:
+@limiter.limit("60/minute")
+def get_kpis(request: Request, db: Session = Depends(get_db)) -> dict:
     """Dashboard KPIs for the Network Status tab."""
     total_inventory = db.query(Inventory).all()
     total_on_hand = sum(i.on_hand for i in total_inventory)
@@ -42,7 +44,8 @@ def get_kpis(db: Session = Depends(get_db)) -> dict:
 
 
 @router.get("/logs", response_model=list[GlassBoxLog])
-def get_logs(limit: int = 50, db: Session = Depends(get_db)) -> list[dict]:
+@limiter.limit("60/minute")
+def get_logs(request: Request, limit: int = 50, db: Session = Depends(get_db)) -> list[dict]:
     """Return recent agent logs (persisted Glass Box entries)."""
     logs = db.query(AgentLog).order_by(AgentLog.id.desc()).limit(limit).all()
     return [
@@ -57,12 +60,14 @@ def get_logs(limit: int = 50, db: Session = Depends(get_db)) -> list[dict]:
 
 
 @router.get("/settings/log-delay", response_model=LogDelayResponse)
+@limiter.limit("60/minute")
 def get_log_delay_setting(request: Request) -> dict:
     """Return the current log delay setting."""
     return {"delay": getattr(request.app.state, "log_delay_seconds", 2.0)}
 
 
 @router.post("/settings/log-delay", response_model=LogDelayResponse)
+@limiter.limit("60/minute")
 def set_log_delay_setting(request: Request, delay: float = 2.0) -> dict:
     """Update the delay (in seconds) between each log line during simulations."""
     # Clamp to reasonable range and store on app.state (thread-safe for single worker)

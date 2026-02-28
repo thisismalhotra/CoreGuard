@@ -346,7 +346,9 @@ def db_quality_inspections(
 
 
 @router.get("/db/agent_logs", response_model=list[DBAgentLogRow])
+@limiter.limit("60/minute")
 def db_agent_logs(
+    request: Request,
     db: Session = Depends(get_db),
     limit: int = Query(default=200, ge=1, le=1000),
     offset: int = Query(default=0, ge=0),
@@ -362,7 +364,9 @@ def db_agent_logs(
 
 
 @router.get("/db/sales_orders", response_model=list[DBSalesOrderRow])
+@limiter.limit("60/minute")
 def db_sales_orders(
+    request: Request,
     db: Session = Depends(get_db),
     limit: int = Query(default=100, ge=1, le=1000),
     offset: int = Query(default=0, ge=0),
@@ -380,7 +384,9 @@ def db_sales_orders(
 
 
 @router.get("/db/ring_fence_audit", response_model=list[DBRingFenceAuditRow])
+@limiter.limit("60/minute")
 def db_ring_fence_audit(
+    request: Request,
     db: Session = Depends(get_db),
     limit: int = Query(default=100, ge=1, le=1000),
     offset: int = Query(default=0, ge=0),
@@ -398,7 +404,9 @@ def db_ring_fence_audit(
 
 
 @router.get("/db/inventory_health", response_model=list[DBInventoryHealthRow])
+@limiter.limit("60/minute")
 def db_inventory_health(
+    request: Request,
     db: Session = Depends(get_db),
     limit: int = Query(default=100, ge=1, le=1000),
     offset: int = Query(default=0, ge=0),
@@ -414,7 +422,9 @@ def db_inventory_health(
 
 
 @router.get("/db/supplier_contracts", response_model=list[DBSupplierContractRow])
+@limiter.limit("60/minute")
 def db_supplier_contracts(
+    request: Request,
     db: Session = Depends(get_db),
     limit: int = Query(default=100, ge=1, le=1000),
     offset: int = Query(default=0, ge=0),
@@ -437,7 +447,9 @@ def db_supplier_contracts(
 
 
 @router.get("/db/scheduled_releases", response_model=list[DBScheduledReleaseRow])
+@limiter.limit("60/minute")
 def db_scheduled_releases(
+    request: Request,
     db: Session = Depends(get_db),
     limit: int = Query(default=100, ge=1, le=1000),
     offset: int = Query(default=0, ge=0),
@@ -457,7 +469,9 @@ def db_scheduled_releases(
 
 
 @router.get("/db/alternate_suppliers", response_model=list[DBAlternateSupplierRow])
+@limiter.limit("60/minute")
 def db_alternate_suppliers(
+    request: Request,
     db: Session = Depends(get_db),
     limit: int = Query(default=100, ge=1, le=1000),
     offset: int = Query(default=0, ge=0),

@@ -11,12 +11,15 @@ import logging
 from contextlib import asynccontextmanager
 
 import socketio
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
 
 logger = logging.getLogger(__name__)
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from database.connection import init_db
+from rate_limit import limiter
 from routers import inventory, orders, kpis, agents_meta, simulations
 from routers.data_integrity import router as data_integrity_router
 
@@ -37,6 +40,9 @@ app = FastAPI(
     version="1.0.0",
     lifespan=lifespan,
 )
+
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 app.add_middleware(
     CORSMiddleware,

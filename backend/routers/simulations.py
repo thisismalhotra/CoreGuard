@@ -9,8 +9,10 @@ import asyncio
 from datetime import datetime, timezone, timedelta
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.orm import Session
+
+from rate_limit import limiter
 
 from database.connection import get_db, engine
 from database.models import (
@@ -80,7 +82,9 @@ def _sys_log(db: Session, msg: str, log_type: str = "info", agent: str = "System
 # ---------------------------------------------------------------------------
 
 @router.post("/spike", response_model=SpikeResponse)
+@limiter.limit("5/minute")
 async def simulate_demand_spike(
+    request: Request,
     sku: str = "FL-001-T",
     multiplier: float = Query(default=3.0, ge=1.0, le=100.0, description="Demand multiplier (1x–100x)"),
     db: Session = Depends(get_db),
@@ -187,7 +191,9 @@ async def simulate_demand_spike(
 # ---------------------------------------------------------------------------
 
 @router.post("/supply-shock", response_model=SupplyShockResponse)
+@limiter.limit("5/minute")
 async def simulate_supply_shock(
+    request: Request,
     supplier_name: str = "CREE Inc.",
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
@@ -313,7 +319,9 @@ async def simulate_supply_shock(
 # ---------------------------------------------------------------------------
 
 @router.post("/quality-fail", response_model=QualityFailResponse)
+@limiter.limit("5/minute")
 async def simulate_quality_fail(
+    request: Request,
     part_id: str = "CH-231",
     batch_size: int = Query(default=150, ge=1, le=10000, description="Batch size (1–10,000)"),
     db: Session = Depends(get_db),
@@ -359,7 +367,9 @@ async def simulate_quality_fail(
 # ---------------------------------------------------------------------------
 
 @router.post("/cascade-failure", response_model=CascadeFailureResponse)
+@limiter.limit("5/minute")
 async def simulate_cascade_failure(
+    request: Request,
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     """
@@ -464,7 +474,9 @@ async def simulate_cascade_failure(
 # ---------------------------------------------------------------------------
 
 @router.post("/constitution-breach", response_model=ConstitutionBreachResponse)
+@limiter.limit("5/minute")
 async def simulate_constitution_breach(
+    request: Request,
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     """
@@ -541,7 +553,9 @@ async def simulate_constitution_breach(
 # ---------------------------------------------------------------------------
 
 @router.post("/full-blackout", response_model=FullBlackoutResponse)
+@limiter.limit("5/minute")
 async def simulate_full_blackout(
+    request: Request,
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     """
@@ -642,7 +656,9 @@ async def simulate_full_blackout(
 # ---------------------------------------------------------------------------
 
 @router.post("/slow-bleed", response_model=SlowBleedResponse)
+@limiter.limit("5/minute")
 async def simulate_slow_bleed(
+    request: Request,
     part_id: str = Query(default="CH-231", description="Part ID to simulate slow bleed on"),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
@@ -804,7 +820,9 @@ async def simulate_slow_bleed(
 # ---------------------------------------------------------------------------
 
 @router.post("/inventory-decay", response_model=InventoryDecayResponse)
+@limiter.limit("5/minute")
 async def simulate_inventory_decay(
+    request: Request,
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     """
@@ -1021,7 +1039,9 @@ async def simulate_inventory_decay(
 # ---------------------------------------------------------------------------
 
 @router.post("/multi-sku-contention", response_model=MultiSkuContentionResponse)
+@limiter.limit("5/minute")
 async def simulate_multi_sku_contention(
+    request: Request,
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     """
@@ -1236,7 +1256,9 @@ async def simulate_multi_sku_contention(
 # ---------------------------------------------------------------------------
 
 @router.post("/contract-exhaustion", response_model=ContractExhaustionResponse)
+@limiter.limit("5/minute")
 async def simulate_contract_exhaustion(
+    request: Request,
     contract_number: str = Query(default="BPA-CREE-2026"),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
@@ -1387,7 +1409,9 @@ async def simulate_contract_exhaustion(
 # ---------------------------------------------------------------------------
 
 @router.post("/tariff-shock", response_model=TariffShockResponse)
+@limiter.limit("5/minute")
 async def simulate_tariff_shock(
+    request: Request,
     region: str = Query(default="CHINA"),
     increase_pct: float = Query(default=25.0, ge=1.0, le=100.0),
     db: Session = Depends(get_db),
@@ -1553,7 +1577,9 @@ async def simulate_tariff_shock(
 # ---------------------------------------------------------------------------
 
 @router.post("/moq-trap", response_model=MOQTrapResponse)
+@limiter.limit("5/minute")
 async def simulate_moq_trap(
+    request: Request,
     part_id: str = Query(default="LED-201"),
     needed_qty: int = Query(default=80, ge=1),
     db: Session = Depends(get_db),
@@ -1693,7 +1719,9 @@ async def simulate_moq_trap(
 # ---------------------------------------------------------------------------
 
 @router.post("/military-surge", response_model=MilitarySurgeResponse)
+@limiter.limit("5/minute")
 async def simulate_military_surge(
+    request: Request,
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     """
@@ -1836,7 +1864,9 @@ async def simulate_military_surge(
 # ---------------------------------------------------------------------------
 
 @router.post("/semiconductor-allocation", response_model=SemiconductorAllocationResponse)
+@limiter.limit("5/minute")
 async def simulate_semiconductor_allocation(
+    request: Request,
     part_id: str = Query(default="MCU-241"),
     capacity_reduction_pct: float = Query(default=60.0, ge=10.0, le=90.0),
     allocation_weeks: int = Query(default=26, ge=4, le=52),
@@ -1988,7 +2018,9 @@ async def simulate_semiconductor_allocation(
 # ---------------------------------------------------------------------------
 
 @router.post("/seasonal-ramp", response_model=SeasonalRampResponse)
+@limiter.limit("5/minute")
 async def simulate_seasonal_ramp(
+    request: Request,
     deviation_pct: float = Query(default=40.0, ge=10.0, le=100.0),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
@@ -2105,7 +2137,9 @@ async def simulate_seasonal_ramp(
 # ---------------------------------------------------------------------------
 
 @router.post("/demand-horizon", response_model=DemandHorizonResponse)
+@limiter.limit("5/minute")
 async def simulate_demand_horizon(
+    request: Request,
     part_id: str = Query(default="CH-231", description="Part to evaluate"),
     demand_qty: int = Query(default=500, description="Quantity demanded"),
     days_until_needed: int = Query(default=30, description="Days until demand must be fulfilled"),
@@ -2140,7 +2174,9 @@ async def simulate_demand_horizon(
 # ---------------------------------------------------------------------------
 
 @router.post("/reset", response_model=ResetResponse)
+@limiter.limit("2/minute")
 async def simulate_reset(
+    request: Request,
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     """Reset the database to a clean FL-001 state for fresh demos."""

@@ -24,6 +24,9 @@ fpdf2==2.8.2
 python-dotenv==1.0.1
 pydantic==2.10.4
 
+# Rate limiting
+slowapi==0.1.9
+
 # Testing
 pytest==8.3.4
 httpx==0.28.1

@@ -1,16 +1,18 @@
 """Data-integrity warnings endpoint -- surfaces ghost/suspect inventory."""
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from sqlalchemy.orm import Session
 
 from database.connection import get_db
 from database.models import Inventory, Part
+from rate_limit import limiter
 
 router = APIRouter(prefix="/api", tags=["data-integrity"])
 
 
 @router.get("/data-integrity/warnings")
-def get_data_integrity_warnings(db: Session = Depends(get_db)) -> list[dict]:
+@limiter.limit("60/minute")
+def get_data_integrity_warnings(request: Request, db: Session = Depends(get_db)) -> list[dict]:
     """Return inventory items that have integrity concerns."""
     warnings: list[dict] = []
     rows = (
