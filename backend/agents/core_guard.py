@@ -52,6 +52,38 @@ def _log(db: Session, message: str, log_type: str = "info") -> dict[str, str]:
     return create_agent_log(db, AGENT_NAME, message, log_type)
 
 
+def _explode_bom(db: Session, part_id: int, demand_qty: int) -> list[dict]:
+    """
+    Recursively explode BOM to find leaf-level component requirements.
+
+    Returns list of {"part": Part, "inventory": Inventory, "required": int}
+    for every leaf component (no children in BOM).
+    """
+    bom_entries = db.query(BOMEntry).filter(BOMEntry.parent_id == part_id).all()
+
+    if not bom_entries:
+        # Leaf node — this is a purchasable component
+        part = db.query(Part).filter(Part.id == part_id).first()
+        inventory = part.inventory if part else None
+        return [{"part": part, "inventory": inventory, "required": demand_qty}]
+
+    leaf_requirements = []
+    for bom in bom_entries:
+        child_qty = demand_qty * bom.quantity_per
+        child_leaves = _explode_bom(db, bom.component_id, child_qty)
+        leaf_requirements.extend(child_leaves)
+
+    # Aggregate requirements for the same part (shared components across sub-assemblies)
+    aggregated: dict[str, dict] = {}
+    for req in leaf_requirements:
+        pid = req["part"].part_id
+        if pid in aggregated:
+            aggregated[pid]["required"] += req["required"]
+        else:
+            aggregated[pid] = req
+    return list(aggregated.values())
+
+
 def calculate_net_requirements(
     db: Session,
     sku: str,
@@ -59,6 +91,9 @@ def calculate_net_requirements(
 ) -> dict[str, Any]:
     """
     MRP explosion for a single finished-good SKU.
+
+    Uses recursive BOM explosion to walk through sub-assemblies and identify
+    leaf-level component requirements.
 
     Returns:
         {
@@ -85,75 +120,102 @@ def calculate_net_requirements(
         logs.append(_log(db, f"No BOM found for {sku}. Cannot calculate requirements.", "warning"))
         return {"sku": sku, "demand_qty": demand_qty, "shortages": [], "actions": [], "logs": logs}
 
+    # Check if any BOM children have their own children (multi-level BOM)
+    has_sub_assemblies = any(
+        db.query(BOMEntry).filter(BOMEntry.parent_id == bom.component_id).first() is not None
+        for bom in bom_entries
+    )
+
     shortages: list[dict[str, Any]] = []
     actions: list[dict[str, Any]] = []
 
-    for bom in bom_entries:
-        component = bom.component
-        inventory = component.inventory
+    if has_sub_assemblies:
+        # Recursive BOM explosion — walk through sub-assemblies to leaf components
+        logs.append(_log(db, f"Multi-level BOM detected for {sku}. Exploding to leaf components."))
+        leaf_requirements = _explode_bom(db, part.id, demand_qty)
 
-        # Look up criticality-based routing rules for this component
-        routing = ROUTING_RULES.get(component.criticality, ROUTING_RULES[CriticalityLevel.MEDIUM])
+        for req in leaf_requirements:
+            component = req["part"]
+            inventory = req["inventory"]
+            required = req["required"]
 
-        # Pure Python math — Rule B
-        required = demand_qty * bom.quantity_per
-        available = inventory.available if inventory else 0
-        gap = required - available
+            routing = ROUTING_RULES.get(component.criticality, ROUTING_RULES[CriticalityLevel.MEDIUM])
+            available = inventory.available if inventory else 0
+            gap = required - available
 
-        logs.append(_log(
-            db,
-            f"BOM check: {component.part_id} [{component.criticality.value}] — "
-            f"need {required}, available {available}, gap {gap}.",
-        ))
-
-        if gap <= 0:
-            logs.append(_log(db, f"{component.part_id}: Stock sufficient. No action needed.", "success"))
-            continue
-
-        # Apply safety stock multiplier — CRITICAL parts get extra buffer
-        order_qty = int(gap * routing["safety_stock_multiplier"])
-        if order_qty > gap:
             logs.append(_log(
                 db,
-                f"Criticality [{component.criticality.value}]: Adding {routing['safety_stock_multiplier']}x buffer → "
-                f"ordering {order_qty} (gap was {gap}).",
-                "info",
+                f"BOM check: {component.part_id} [{component.criticality.value}] — "
+                f"need {required}, available {available}, gap {gap}.",
             ))
 
-        shortages.append({
-            "part_id": component.part_id,
-            "required": required,
-            "available": available,
-            "gap": gap,
-            "criticality": component.criticality.value,
-        })
+            if gap <= 0:
+                logs.append(_log(db, f"{component.part_id}: Stock sufficient. No action needed.", "success"))
+                continue
 
-        logs.append(_log(db, f"SHORTAGE: {component.part_id} short by {gap} units.", "warning"))
+            order_qty = int(gap * routing["safety_stock_multiplier"])
+            if order_qty > gap:
+                logs.append(_log(
+                    db,
+                    f"Criticality [{component.criticality.value}]: Adding {routing['safety_stock_multiplier']}x buffer → "
+                    f"ordering {order_qty} (gap was {gap}).",
+                    "info",
+                ))
 
-        # --- Routing decision based on criticality ---
-        reallocation = None
-        if routing["allow_reallocation"]:
-            reallocation = _attempt_reallocation(db, part, component, order_qty, logs)
-        else:
-            logs.append(_log(
-                db,
-                f"Reallocation BLOCKED for {component.part_id} — criticality [{component.criticality.value}] "
-                f"forbids stock transfers. Must procure externally.",
-                "warning",
-            ))
+            shortages.append({
+                "part_id": component.part_id,
+                "required": required,
+                "available": available,
+                "gap": gap,
+                "criticality": component.criticality.value,
+            })
 
-        if reallocation:
-            actions.append(reallocation)
-            remaining = reallocation.get("remaining", 0)
-            if remaining > 0:
-                # Partial reallocation — issue a BUY_ORDER for only the uncovered gap
-                buy_qty = int(remaining * routing["safety_stock_multiplier"])
+            logs.append(_log(db, f"SHORTAGE: {component.part_id} short by {gap} units.", "warning"))
+
+            # Routing decision for leaf components
+            reallocation = None
+            if routing["allow_reallocation"]:
+                reallocation = _attempt_reallocation(db, part, component, order_qty, logs)
+            else:
+                logs.append(_log(
+                    db,
+                    f"Reallocation BLOCKED for {component.part_id} — criticality [{component.criticality.value}] "
+                    f"forbids stock transfers. Must procure externally.",
+                    "warning",
+                ))
+
+            if reallocation:
+                actions.append(reallocation)
+                remaining = reallocation.get("remaining", 0)
+                if remaining > 0:
+                    buy_qty = int(remaining * routing["safety_stock_multiplier"])
+                    buy_order = {
+                        "type": "BUY_ORDER",
+                        "part_id": component.part_id,
+                        "quantity": buy_qty,
+                        "unit_cost": component.unit_cost,
+                        "total_cost": round(buy_qty * component.unit_cost, 2),
+                        "supplier_id": component.supplier_id,
+                        "supplier_name": component.supplier.name if component.supplier else "Unknown",
+                        "triggered_by": AGENT_NAME,
+                        "expedite": routing["expedite"],
+                        "criticality": component.criticality.value,
+                    }
+                    actions.append(buy_order)
+                    logs.append(_log(
+                        db,
+                        f"Issuing BUY_ORDER for remaining gap: {buy_qty}x {component.part_id} from {buy_order['supplier_name']} "
+                        f"@ ${buy_order['total_cost']:.2f}"
+                        f"{' [EXPEDITED]' if routing['expedite'] else ''}.",
+                        "info",
+                    ))
+            else:
                 buy_order = {
                     "type": "BUY_ORDER",
                     "part_id": component.part_id,
-                    "quantity": buy_qty,
+                    "quantity": order_qty,
                     "unit_cost": component.unit_cost,
-                    "total_cost": round(buy_qty * component.unit_cost, 2),
+                    "total_cost": round(order_qty * component.unit_cost, 2),
                     "supplier_id": component.supplier_id,
                     "supplier_name": component.supplier.name if component.supplier else "Unknown",
                     "triggered_by": AGENT_NAME,
@@ -163,33 +225,115 @@ def calculate_net_requirements(
                 actions.append(buy_order)
                 logs.append(_log(
                     db,
-                    f"Issuing BUY_ORDER for remaining gap: {buy_qty}x {component.part_id} from {buy_order['supplier_name']} "
+                    f"Issuing BUY_ORDER: {order_qty}x {component.part_id} from {buy_order['supplier_name']} "
                     f"@ ${buy_order['total_cost']:.2f}"
                     f"{' [EXPEDITED]' if routing['expedite'] else ''}.",
                     "info",
                 ))
-        else:
-            # Cannot reallocate — issue a BUY_ORDER for full order quantity
-            buy_order = {
-                "type": "BUY_ORDER",
-                "part_id": component.part_id,
-                "quantity": order_qty,
-                "unit_cost": component.unit_cost,
-                "total_cost": round(order_qty * component.unit_cost, 2),
-                "supplier_id": component.supplier_id,
-                "supplier_name": component.supplier.name if component.supplier else "Unknown",
-                "triggered_by": AGENT_NAME,
-                "expedite": routing["expedite"],
-                "criticality": component.criticality.value,
-            }
-            actions.append(buy_order)
+    else:
+        # Single-level BOM — original behavior for backwards compatibility
+        for bom in bom_entries:
+            component = bom.component
+            inventory = component.inventory
+
+            # Look up criticality-based routing rules for this component
+            routing = ROUTING_RULES.get(component.criticality, ROUTING_RULES[CriticalityLevel.MEDIUM])
+
+            # Pure Python math — Rule B
+            required = demand_qty * bom.quantity_per
+            available = inventory.available if inventory else 0
+            gap = required - available
+
             logs.append(_log(
                 db,
-                f"Issuing BUY_ORDER: {order_qty}x {component.part_id} from {buy_order['supplier_name']} "
-                f"@ ${buy_order['total_cost']:.2f}"
-                f"{' [EXPEDITED]' if routing['expedite'] else ''}.",
-                "info",
+                f"BOM check: {component.part_id} [{component.criticality.value}] — "
+                f"need {required}, available {available}, gap {gap}.",
             ))
+
+            if gap <= 0:
+                logs.append(_log(db, f"{component.part_id}: Stock sufficient. No action needed.", "success"))
+                continue
+
+            # Apply safety stock multiplier — CRITICAL parts get extra buffer
+            order_qty = int(gap * routing["safety_stock_multiplier"])
+            if order_qty > gap:
+                logs.append(_log(
+                    db,
+                    f"Criticality [{component.criticality.value}]: Adding {routing['safety_stock_multiplier']}x buffer → "
+                    f"ordering {order_qty} (gap was {gap}).",
+                    "info",
+                ))
+
+            shortages.append({
+                "part_id": component.part_id,
+                "required": required,
+                "available": available,
+                "gap": gap,
+                "criticality": component.criticality.value,
+            })
+
+            logs.append(_log(db, f"SHORTAGE: {component.part_id} short by {gap} units.", "warning"))
+
+            # --- Routing decision based on criticality ---
+            reallocation = None
+            if routing["allow_reallocation"]:
+                reallocation = _attempt_reallocation(db, part, component, order_qty, logs)
+            else:
+                logs.append(_log(
+                    db,
+                    f"Reallocation BLOCKED for {component.part_id} — criticality [{component.criticality.value}] "
+                    f"forbids stock transfers. Must procure externally.",
+                    "warning",
+                ))
+
+            if reallocation:
+                actions.append(reallocation)
+                remaining = reallocation.get("remaining", 0)
+                if remaining > 0:
+                    # Partial reallocation — issue a BUY_ORDER for only the uncovered gap
+                    buy_qty = int(remaining * routing["safety_stock_multiplier"])
+                    buy_order = {
+                        "type": "BUY_ORDER",
+                        "part_id": component.part_id,
+                        "quantity": buy_qty,
+                        "unit_cost": component.unit_cost,
+                        "total_cost": round(buy_qty * component.unit_cost, 2),
+                        "supplier_id": component.supplier_id,
+                        "supplier_name": component.supplier.name if component.supplier else "Unknown",
+                        "triggered_by": AGENT_NAME,
+                        "expedite": routing["expedite"],
+                        "criticality": component.criticality.value,
+                    }
+                    actions.append(buy_order)
+                    logs.append(_log(
+                        db,
+                        f"Issuing BUY_ORDER for remaining gap: {buy_qty}x {component.part_id} from {buy_order['supplier_name']} "
+                        f"@ ${buy_order['total_cost']:.2f}"
+                        f"{' [EXPEDITED]' if routing['expedite'] else ''}.",
+                        "info",
+                    ))
+            else:
+                # Cannot reallocate — issue a BUY_ORDER for full order quantity
+                buy_order = {
+                    "type": "BUY_ORDER",
+                    "part_id": component.part_id,
+                    "quantity": order_qty,
+                    "unit_cost": component.unit_cost,
+                    "total_cost": round(order_qty * component.unit_cost, 2),
+                    "supplier_id": component.supplier_id,
+                    "supplier_name": component.supplier.name if component.supplier else "Unknown",
+                    "triggered_by": AGENT_NAME,
+                    "expedite": routing["expedite"],
+                    "criticality": component.criticality.value,
+                }
+                actions.append(buy_order)
+                logs.append(_log(
+                    db,
+                    f"Issuing BUY_ORDER: {order_qty}x {component.part_id} from {buy_order['supplier_name']} "
+                    f"@ ${buy_order['total_cost']:.2f}"
+                    f"{' [EXPEDITED]' if routing['expedite'] else ''}.",
+                    "info",
+                ))
 
     if not shortages:
         logs.append(_log(db, f"All components for {sku} are in stock. No procurement needed.", "success"))

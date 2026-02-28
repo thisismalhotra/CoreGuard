@@ -103,6 +103,33 @@ export const api = {
     fetchJSON<Record<string, unknown>>("/api/simulate/inventory-decay", { method: "POST" }),
   simulateMultiSkuContention: () =>
     fetchJSON<Record<string, unknown>>("/api/simulate/multi-sku-contention", { method: "POST" }),
+  simulateContractExhaustion: (contractNumber = "BPA-CREE-2026") =>
+    fetchJSON<Record<string, unknown>>(
+      `/api/simulate/contract-exhaustion?contract_number=${contractNumber}`,
+      { method: "POST" }
+    ),
+  simulateTariffShock: (region = "CHINA", increasePct = 25) =>
+    fetchJSON<Record<string, unknown>>(
+      `/api/simulate/tariff-shock?region=${region}&increase_pct=${increasePct}`,
+      { method: "POST" }
+    ),
+  simulateMoqTrap: (partId = "LED-201", neededQty = 80) =>
+    fetchJSON<Record<string, unknown>>(
+      `/api/simulate/moq-trap?part_id=${partId}&needed_qty=${neededQty}`,
+      { method: "POST" }
+    ),
+  simulateMilitarySurge: () =>
+    fetchJSON<Record<string, unknown>>("/api/simulate/military-surge", { method: "POST" }),
+  simulateSemiconductorAllocation: (partId = "MCU-241", reductionPct = 60) =>
+    fetchJSON<Record<string, unknown>>(
+      `/api/simulate/semiconductor-allocation?part_id=${partId}&capacity_reduction_pct=${reductionPct}`,
+      { method: "POST" }
+    ),
+  simulateSeasonalRamp: (deviationPct = 40) =>
+    fetchJSON<Record<string, unknown>>(
+      `/api/simulate/seasonal-ramp?deviation_pct=${deviationPct}`,
+      { method: "POST" }
+    ),
   updateOrderStatus: (poNumber: string, status: "APPROVED" | "CANCELLED") =>
     fetchJSON<PurchaseOrder>(`/api/orders/${poNumber}`, {
       method: "PATCH",

@@ -250,6 +250,87 @@ class MultiSkuContentionResponse(BaseModel):
     logs: list[GlassBoxLog]
 
 
+class ContractExhaustionResponse(BaseModel):
+    """Response for Scenario 10: Contract Exhaustion."""
+    status: str
+    scenario: str = "CONTRACT_EXHAUSTION"
+    contract_number: str
+    supplier: str
+    remaining_qty: int
+    remaining_value: float
+    forecast_demand: int
+    recommendation: str  # "EXTEND" | "SPOT_BUY" | "RENEGOTIATE"
+    spot_buy_premium_pct: float
+    procurement: list[PurchaseOrderSummary]
+    logs: list[GlassBoxLog]
+
+
+class TariffShockResponse(BaseModel):
+    """Response for Scenario 11: Tariff Shock."""
+    status: str
+    scenario: str = "TARIFF_SHOCK"
+    affected_suppliers: list[str]
+    cost_increase_pct: float
+    affected_parts: list[str]
+    alternate_options: list[dict[str, Any]]
+    procurement: list[PurchaseOrderSummary]
+    logs: list[GlassBoxLog]
+
+
+class MOQTrapResponse(BaseModel):
+    """Response for Scenario 12: MOQ Trap."""
+    status: str
+    scenario: str = "MOQ_TRAP"
+    part_id: str
+    needed_qty: int
+    moq: int
+    excess_qty: int
+    carry_cost: float
+    small_lot_premium: float
+    recommendation: str  # "BUY_MOQ" | "SMALL_LOT" | "WAIT"
+    procurement: list[PurchaseOrderSummary]
+    logs: list[GlassBoxLog]
+
+
+class MilitarySurgeResponse(BaseModel):
+    """Response for Scenario 13: Military Surge."""
+    status: str
+    scenario: str = "MILITARY_SURGE"
+    order_number: str
+    original_qty: int
+    new_qty: int
+    deadline_days: int
+    ring_fenced_parts: list[dict[str, Any]]
+    displaced_orders: list[dict[str, Any]]
+    procurement: list[PurchaseOrderSummary]
+    logs: list[GlassBoxLog]
+
+
+class SemiconductorAllocationResponse(BaseModel):
+    """Response for Scenario 14: Semiconductor Allocation."""
+    status: str
+    scenario: str = "SEMICONDUCTOR_ALLOCATION"
+    part_id: str
+    original_capacity: int
+    reduced_capacity: int
+    allocation_weeks: int
+    affected_products: list[str]
+    product_mix_recommendation: list[dict[str, Any]]
+    procurement: list[PurchaseOrderSummary]
+    logs: list[GlassBoxLog]
+
+
+class SeasonalRampResponse(BaseModel):
+    """Response for Scenario 15: Seasonal Ramp."""
+    status: str
+    scenario: str = "SEASONAL_RAMP"
+    forecast_deviation_pct: float
+    affected_products: list[str]
+    pre_positioned_parts: list[dict[str, Any]]
+    procurement: list[PurchaseOrderSummary]
+    logs: list[GlassBoxLog]
+
+
 class ResetResponse(BaseModel):
     status: str
     message: str

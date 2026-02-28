@@ -15,6 +15,8 @@ from sqlalchemy.orm import Session
 from database.connection import get_db, engine
 from database.models import (
     Part, Supplier, DemandForecast, AgentLog, Base, BOMEntry, Inventory,
+    SupplierContract, AlternateSupplier, SalesOrder,
+    SupplierRegion, ContractStatus, SalesOrderStatus,
 )
 from agents.aura import detect_demand_spike
 from agents.dispatcher import triage_demand_spike
@@ -28,6 +30,8 @@ from schemas import (
     CascadeFailureResponse, ConstitutionBreachResponse,
     FullBlackoutResponse, SlowBleedResponse, InventoryDecayResponse,
     MultiSkuContentionResponse,
+    ContractExhaustionResponse, TariffShockResponse, MOQTrapResponse,
+    MilitarySurgeResponse, SemiconductorAllocationResponse, SeasonalRampResponse,
     ResetResponse,
 )
 
@@ -267,6 +271,12 @@ async def simulate_supply_shock(
         all_logs.append(log)
         await emit_logs([log])
 
+    # Part Agent: Recalculate runway with supplier offline
+    for part in affected_parts:
+        pa_result = monitor_part(db, part.part_id)
+        all_logs.extend(pa_result["logs"])
+        await emit_logs(pa_result["logs"])
+
     # Step 3: Ghost-Writer processes emergency POs
     ghost_result: dict[str, Any] = {"purchase_orders": [], "logs": []}
     if emergency_orders:
@@ -315,6 +325,11 @@ async def simulate_quality_fail(
     inspection_result = inspect_batch(db, part_id, batch_size, force_fail=True)
     all_logs.extend(inspection_result["logs"])
     await emit_logs(inspection_result["logs"])
+
+    # Part Agent: Recalculate runway after quarantine reduces effective on-hand
+    pa_result = monitor_part(db, part_id)
+    all_logs.extend(pa_result["logs"])
+    await emit_logs(pa_result["logs"])
 
     ghost_result: dict[str, Any] = {"purchase_orders": [], "logs": []}
     buy_orders = inspection_result.get("actions", [])
@@ -374,6 +389,11 @@ async def simulate_cascade_failure(
     aura_result = detect_demand_spike(db, "FL-001-T", spiked_qty)
     all_logs.extend(aura_result["logs"])
     await emit_logs(aura_result["logs"])
+
+    # Part Agent: Baseline monitoring under dual crisis
+    part_agent_result = monitor_all_components(db, "FL-001-T", spiked_qty)
+    all_logs.extend(part_agent_result["logs"])
+    await emit_logs(part_agent_result["logs"])
 
     # Act 2.5: Dispatcher triages
     dispatch_result = triage_demand_spike(db, "FL-001-T", spiked_qty)
@@ -549,6 +569,11 @@ async def simulate_full_blackout(
     aura_result = detect_demand_spike(db, "FL-001-T", spiked_qty)
     all_logs.extend(aura_result["logs"])
     await emit_logs(aura_result["logs"])
+
+    # Part Agent: Assess runway with no supplier path
+    part_agent_result = monitor_all_components(db, "FL-001-T", spiked_qty)
+    all_logs.extend(part_agent_result["logs"])
+    await emit_logs(part_agent_result["logs"])
 
     dispatch_result = triage_demand_spike(db, "FL-001-T", spiked_qty)
     all_logs.extend(dispatch_result["logs"])
@@ -1201,6 +1226,875 @@ async def simulate_multi_sku_contention(
         "combined_demand": combined_demand,
         "prioritization": prioritization,
         "procurement": ghost_result["purchase_orders"],
+        "logs": all_logs,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Scenario 10: Contract Exhaustion
+# ---------------------------------------------------------------------------
+
+@router.post("/contract-exhaustion", response_model=ContractExhaustionResponse)
+async def simulate_contract_exhaustion(
+    contract_number: str = Query(default="BPA-CREE-2026"),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """
+    Scenario 10: Blanket PO is 90% consumed with months remaining.
+    Ghost-Writer evaluates: extend contract vs. spot buy at premium.
+    """
+    all_logs: list[dict[str, str]] = []
+
+    contract = db.query(SupplierContract).filter(
+        SupplierContract.contract_number == contract_number
+    ).first()
+    if not contract:
+        raise HTTPException(status_code=404, detail=f"Contract '{contract_number}' not found")
+
+    supplier = contract.supplier
+
+    log = _sys_log(
+        db,
+        f"CONTRACT EXHAUSTION ANALYSIS: {contract_number} with {supplier.name}. "
+        f"Remaining: {contract.remaining_qty} units, ${contract.remaining_value:,.2f}.",
+        "warning",
+    )
+    all_logs.append(log)
+    await emit_logs([log])
+
+    # Calculate forecast demand for remaining contract term
+    import json
+    price_schedule = json.loads(contract.price_schedule) if contract.price_schedule else []
+    blanket_price = price_schedule[0]["unit_price"] if price_schedule else 0.0
+    spot_price = price_schedule[0].get("spot_price", blanket_price * 1.15) if price_schedule else 0.0
+    spot_premium_pct = round((spot_price - blanket_price) / blanket_price * 100, 1) if blanket_price > 0 else 0.0
+
+    # Find parts covered by this contract's supplier
+    parts = db.query(Part).filter(Part.supplier_id == supplier.id).all()
+    forecast_demand = 0
+    for p in parts:
+        forecasts = db.query(DemandForecast).filter(DemandForecast.part_id == p.id).all()
+        forecast_demand += sum(f.forecast_qty for f in forecasts)
+
+    log = _sys_log(
+        db,
+        f"Forecast analysis: {forecast_demand} total units forecast across {len(parts)} part(s) "
+        f"covered by {supplier.name}. Contract has {contract.remaining_qty} units remaining.",
+        "info",
+        agent="Core-Guard",
+    )
+    all_logs.append(log)
+    await emit_logs([log])
+
+    # Determine recommendation
+    coverage_ratio = contract.remaining_qty / max(forecast_demand, 1)
+    if coverage_ratio < 0.3:
+        recommendation = "EXTEND"
+        log = _sys_log(
+            db,
+            f"RECOMMENDATION: EXTEND contract — only {coverage_ratio:.0%} of forecast demand covered. "
+            f"Spot buy premium would be {spot_premium_pct}%.",
+            "warning",
+            agent="Ghost-Writer",
+        )
+    elif coverage_ratio < 0.7:
+        recommendation = "RENEGOTIATE"
+        log = _sys_log(
+            db,
+            f"RECOMMENDATION: RENEGOTIATE — {coverage_ratio:.0%} coverage. "
+            f"Consider volume increase to avoid spot buys at {spot_premium_pct}% premium.",
+            "info",
+            agent="Ghost-Writer",
+        )
+    else:
+        recommendation = "SPOT_BUY"
+        log = _sys_log(
+            db,
+            f"RECOMMENDATION: SPOT_BUY for overflow — {coverage_ratio:.0%} coverage is adequate. "
+            f"Spot premium {spot_premium_pct}% acceptable for gap.",
+            "info",
+            agent="Ghost-Writer",
+        )
+    all_logs.append(log)
+    await emit_logs([log])
+
+    # Check for alternate suppliers
+    alt_mappings = db.query(AlternateSupplier).filter(
+        AlternateSupplier.primary_supplier_id == supplier.id
+    ).all()
+    if alt_mappings:
+        for alt in alt_mappings:
+            alt_supplier = db.query(Supplier).filter(Supplier.id == alt.alternate_supplier_id).first()
+            if alt_supplier:
+                log = _sys_log(
+                    db,
+                    f"Alternate supplier available: {alt_supplier.name} — "
+                    f"+{alt.cost_premium_pct}% cost, +{alt.lead_time_delta_days}d lead time. "
+                    f"Notes: {alt.notes or 'N/A'}.",
+                    "info",
+                    agent="Core-Guard",
+                )
+                all_logs.append(log)
+                await emit_logs([log])
+
+    # Generate PO if contract is nearly exhausted
+    ghost_result: dict[str, Any] = {"purchase_orders": [], "logs": []}
+    if coverage_ratio < 0.5:
+        gap_qty = forecast_demand - contract.remaining_qty
+        buy_orders = [{
+            "type": "BUY_ORDER",
+            "part_id": parts[0].part_id if parts else "UNKNOWN",
+            "quantity": gap_qty,
+            "unit_cost": spot_price,
+            "total_cost": round(gap_qty * spot_price, 2),
+            "supplier_id": supplier.id,
+            "supplier_name": supplier.name,
+            "triggered_by": "Ghost-Writer",
+        }]
+        ghost_result = process_buy_orders(db, buy_orders)
+        all_logs.extend(ghost_result["logs"])
+        await emit_logs(ghost_result["logs"])
+
+    summary = _sys_log(
+        db,
+        f"Contract exhaustion analysis complete: {contract_number} has {contract.remaining_qty} units "
+        f"remaining (${contract.remaining_value:,.2f}). Recommendation: {recommendation}.",
+        "success",
+    )
+    all_logs.append(summary)
+    await emit_logs([summary])
+
+    db.commit()
+
+    return {
+        "status": "simulation_complete",
+        "scenario": "CONTRACT_EXHAUSTION",
+        "contract_number": contract_number,
+        "supplier": supplier.name,
+        "remaining_qty": contract.remaining_qty,
+        "remaining_value": contract.remaining_value,
+        "forecast_demand": forecast_demand,
+        "recommendation": recommendation,
+        "spot_buy_premium_pct": spot_premium_pct,
+        "procurement": ghost_result["purchase_orders"],
+        "logs": all_logs,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Scenario 11: Tariff Shock
+# ---------------------------------------------------------------------------
+
+@router.post("/tariff-shock", response_model=TariffShockResponse)
+async def simulate_tariff_shock(
+    region: str = Query(default="CHINA"),
+    increase_pct: float = Query(default=25.0, ge=1.0, le=100.0),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """
+    Scenario 11: Tariff announcement on a region — costs jump overnight.
+    Core-Guard recalculates with new costs; Ghost-Writer evaluates alternates.
+    """
+    all_logs: list[dict[str, str]] = []
+
+    # Map string to enum
+    try:
+        target_region = SupplierRegion(region)
+    except ValueError:
+        raise HTTPException(status_code=400, detail=f"Unknown region '{region}'. Valid: {[r.value for r in SupplierRegion]}")
+
+    log = _sys_log(
+        db,
+        f"TARIFF SHOCK: {increase_pct}% tariff increase on all suppliers in {region}.",
+        "error",
+    )
+    all_logs.append(log)
+    await emit_logs([log])
+
+    # Find affected suppliers
+    affected_suppliers = db.query(Supplier).filter(Supplier.region == target_region).all()
+    affected_supplier_names = [s.name for s in affected_suppliers]
+
+    if not affected_suppliers:
+        log = _sys_log(db, f"No suppliers found in region {region}.", "info")
+        all_logs.append(log)
+        await emit_logs([log])
+        db.commit()
+        return {
+            "status": "simulation_complete",
+            "scenario": "TARIFF_SHOCK",
+            "affected_suppliers": [],
+            "cost_increase_pct": increase_pct,
+            "affected_parts": [],
+            "alternate_options": [],
+            "procurement": [],
+            "logs": all_logs,
+        }
+
+    log = _sys_log(
+        db,
+        f"Found {len(affected_suppliers)} supplier(s) in {region}: {', '.join(affected_supplier_names)}.",
+        "warning",
+        agent="Core-Guard",
+    )
+    all_logs.append(log)
+    await emit_logs([log])
+
+    # Find affected parts and calculate new costs
+    affected_parts: list[str] = []
+    alternate_options: list[dict[str, Any]] = []
+    buy_orders: list[dict[str, Any]] = []
+
+    for supplier in affected_suppliers:
+        parts = db.query(Part).filter(Part.supplier_id == supplier.id).all()
+        for p in parts:
+            affected_parts.append(p.part_id)
+            tariffed_cost = round(p.unit_cost * (1 + increase_pct / 100), 2)
+
+            log = _sys_log(
+                db,
+                f"Tariff impact: {p.part_id} ({p.description}) — "
+                f"cost ${p.unit_cost:.2f} → ${tariffed_cost:.2f} (+{increase_pct}%).",
+                "warning",
+                agent="Core-Guard",
+            )
+            all_logs.append(log)
+            await emit_logs([log])
+
+            # Check for alternate suppliers outside the tariffed region
+            alt_mappings = db.query(AlternateSupplier).filter(
+                AlternateSupplier.part_id == p.id,
+                AlternateSupplier.primary_supplier_id == supplier.id,
+            ).all()
+
+            for alt in alt_mappings:
+                alt_supplier = db.query(Supplier).filter(Supplier.id == alt.alternate_supplier_id).first()
+                if alt_supplier and alt_supplier.region != target_region:
+                    alt_cost = round(p.unit_cost * (1 + alt.cost_premium_pct / 100), 2)
+                    option = {
+                        "supplier": alt_supplier.name,
+                        "part_id": p.part_id,
+                        "new_cost": alt_cost,
+                        "tariffed_cost": tariffed_cost,
+                        "lead_time": alt_supplier.lead_time_days + alt.lead_time_delta_days,
+                        "saves_money": alt_cost < tariffed_cost,
+                    }
+                    alternate_options.append(option)
+
+                    if alt_cost < tariffed_cost:
+                        log = _sys_log(
+                            db,
+                            f"SWITCH RECOMMENDED: {p.part_id} to {alt_supplier.name} ({alt_supplier.region.value}) — "
+                            f"${alt_cost:.2f} vs tariffed ${tariffed_cost:.2f}. "
+                            f"Savings: ${tariffed_cost - alt_cost:.2f}/unit.",
+                            "success",
+                            agent="Ghost-Writer",
+                        )
+                    else:
+                        log = _sys_log(
+                            db,
+                            f"Alternate {alt_supplier.name} for {p.part_id}: ${alt_cost:.2f} vs tariffed ${tariffed_cost:.2f} — "
+                            f"not cheaper, but avoids tariff risk.",
+                            "info",
+                            agent="Ghost-Writer",
+                        )
+                    all_logs.append(log)
+                    await emit_logs([log])
+
+                    # Generate a PO if switching is cheaper
+                    if alt_cost < tariffed_cost:
+                        inv = p.inventory
+                        order_qty = inv.safety_stock if inv else 100
+                        buy_orders.append({
+                            "type": "BUY_ORDER",
+                            "part_id": p.part_id,
+                            "quantity": order_qty,
+                            "unit_cost": alt_cost,
+                            "total_cost": round(order_qty * alt_cost, 2),
+                            "supplier_id": alt_supplier.id,
+                            "supplier_name": alt_supplier.name,
+                            "triggered_by": "Ghost-Writer",
+                        })
+
+    # Ghost-Writer processes POs
+    ghost_result: dict[str, Any] = {"purchase_orders": [], "logs": []}
+    if buy_orders:
+        ghost_result = process_buy_orders(db, buy_orders)
+        all_logs.extend(ghost_result["logs"])
+        await emit_logs(ghost_result["logs"])
+
+    summary = _sys_log(
+        db,
+        f"Tariff shock analysis complete: {len(affected_parts)} part(s) affected, "
+        f"{len(alternate_options)} alternate option(s) evaluated, "
+        f"{len(ghost_result['purchase_orders'])} PO(s) generated.",
+        "success",
+    )
+    all_logs.append(summary)
+    await emit_logs([summary])
+
+    db.commit()
+
+    return {
+        "status": "simulation_complete",
+        "scenario": "TARIFF_SHOCK",
+        "affected_suppliers": affected_supplier_names,
+        "cost_increase_pct": increase_pct,
+        "affected_parts": affected_parts,
+        "alternate_options": alternate_options,
+        "procurement": ghost_result["purchase_orders"],
+        "logs": all_logs,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Scenario 12: MOQ Trap
+# ---------------------------------------------------------------------------
+
+@router.post("/moq-trap", response_model=MOQTrapResponse)
+async def simulate_moq_trap(
+    part_id: str = Query(default="LED-201"),
+    needed_qty: int = Query(default=80, ge=1),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """
+    Scenario 12: Need fewer units than MOQ — buy excess or pay small-lot premium?
+    """
+    all_logs: list[dict[str, str]] = []
+
+    part = db.query(Part).filter(Part.part_id == part_id).first()
+    if not part:
+        raise HTTPException(status_code=404, detail=f"Part '{part_id}' not found")
+
+    supplier = part.supplier
+    if not supplier:
+        raise HTTPException(status_code=404, detail=f"No supplier for part '{part_id}'")
+
+    moq = supplier.minimum_order_qty
+
+    log = _sys_log(
+        db,
+        f"MOQ TRAP ANALYSIS: Need {needed_qty}x {part_id} ({part.description}), "
+        f"but supplier {supplier.name} MOQ is {moq}.",
+        "warning",
+    )
+    all_logs.append(log)
+    await emit_logs([log])
+
+    excess_qty = max(0, moq - needed_qty)
+    carry_cost_per_unit_month = part.unit_cost * 0.02  # 2% monthly carrying cost
+    carry_cost = round(excess_qty * carry_cost_per_unit_month * 6, 2)  # 6 months carry
+
+    # Small-lot premium: 15% surcharge for ordering below MOQ
+    small_lot_premium_pct = 15.0
+    small_lot_unit_cost = round(part.unit_cost * (1 + small_lot_premium_pct / 100), 2)
+    small_lot_total = round(needed_qty * small_lot_unit_cost, 2)
+    moq_total = round(moq * part.unit_cost, 2)
+
+    log = _sys_log(
+        db,
+        f"Option A — BUY_MOQ: Order {moq} units at ${part.unit_cost:.2f}/unit = ${moq_total:.2f}. "
+        f"Excess: {excess_qty} units, 6-month carry cost: ${carry_cost:.2f}.",
+        "info",
+        agent="Ghost-Writer",
+    )
+    all_logs.append(log)
+    await emit_logs([log])
+
+    log = _sys_log(
+        db,
+        f"Option B — SMALL_LOT: Order {needed_qty} units at ${small_lot_unit_cost:.2f}/unit (+{small_lot_premium_pct}%) = "
+        f"${small_lot_total:.2f}. No excess inventory.",
+        "info",
+        agent="Ghost-Writer",
+    )
+    all_logs.append(log)
+    await emit_logs([log])
+
+    # Determine recommendation
+    moq_effective_cost = moq_total + carry_cost
+    if needed_qty >= moq:
+        recommendation = "BUY_MOQ"
+        log = _sys_log(
+            db,
+            f"RECOMMENDATION: BUY_MOQ — needed qty ({needed_qty}) meets or exceeds MOQ ({moq}).",
+            "success",
+            agent="Ghost-Writer",
+        )
+    elif moq_effective_cost < small_lot_total:
+        recommendation = "BUY_MOQ"
+        log = _sys_log(
+            db,
+            f"RECOMMENDATION: BUY_MOQ — total cost with carry (${moq_effective_cost:.2f}) is less than "
+            f"small-lot (${small_lot_total:.2f}). Absorb excess.",
+            "info",
+            agent="Ghost-Writer",
+        )
+    elif excess_qty > needed_qty * 3:
+        recommendation = "WAIT"
+        log = _sys_log(
+            db,
+            f"RECOMMENDATION: WAIT — MOQ ({moq}) is >3x needed qty ({needed_qty}). "
+            f"Defer purchase and consolidate with next demand cycle.",
+            "warning",
+            agent="Ghost-Writer",
+        )
+    else:
+        recommendation = "SMALL_LOT"
+        log = _sys_log(
+            db,
+            f"RECOMMENDATION: SMALL_LOT — small-lot premium (${small_lot_total:.2f}) is cheaper than "
+            f"MOQ + carry (${moq_effective_cost:.2f}).",
+            "info",
+            agent="Ghost-Writer",
+        )
+    all_logs.append(log)
+    await emit_logs([log])
+
+    # Generate PO based on recommendation
+    ghost_result: dict[str, Any] = {"purchase_orders": [], "logs": []}
+    if recommendation != "WAIT":
+        order_qty = moq if recommendation == "BUY_MOQ" else needed_qty
+        unit_cost = part.unit_cost if recommendation == "BUY_MOQ" else small_lot_unit_cost
+        buy_orders = [{
+            "type": "BUY_ORDER",
+            "part_id": part.part_id,
+            "quantity": order_qty,
+            "unit_cost": unit_cost,
+            "total_cost": round(order_qty * unit_cost, 2),
+            "supplier_id": supplier.id,
+            "supplier_name": supplier.name,
+            "triggered_by": "Ghost-Writer",
+        }]
+        ghost_result = process_buy_orders(db, buy_orders)
+        all_logs.extend(ghost_result["logs"])
+        await emit_logs(ghost_result["logs"])
+
+    db.commit()
+
+    return {
+        "status": "simulation_complete",
+        "scenario": "MOQ_TRAP",
+        "part_id": part_id,
+        "needed_qty": needed_qty,
+        "moq": moq,
+        "excess_qty": excess_qty,
+        "carry_cost": carry_cost,
+        "small_lot_premium": small_lot_premium_pct,
+        "recommendation": recommendation,
+        "procurement": ghost_result["purchase_orders"],
+        "logs": all_logs,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Scenario 13: Military Surge
+# ---------------------------------------------------------------------------
+
+@router.post("/military-surge", response_model=MilitarySurgeResponse)
+async def simulate_military_surge(
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """
+    Scenario 13: VIP military order doubles, 21-day deadline.
+    Dispatcher triages VIP priority; Core-Guard ring-fences across product lines.
+    """
+    all_logs: list[dict[str, str]] = []
+
+    # Find the VIP military order
+    mil_order = db.query(SalesOrder).filter(SalesOrder.priority == "VIP").first()
+    if not mil_order:
+        # Fallback: use highest priority order
+        mil_order = db.query(SalesOrder).filter(SalesOrder.status == SalesOrderStatus.OPEN).first()
+    if not mil_order:
+        raise HTTPException(status_code=404, detail="No open military/VIP order found")
+
+    original_qty = mil_order.quantity
+    new_qty = original_qty * 2
+    deadline_days = 21
+
+    log = _sys_log(
+        db,
+        f"MILITARY SURGE: Order {mil_order.order_number} doubles from {original_qty} to {new_qty} units. "
+        f"Deadline: {deadline_days} days. Priority: {mil_order.priority}.",
+        "error",
+    )
+    all_logs.append(log)
+    await emit_logs([log])
+
+    # Get the part for this order
+    part = db.query(Part).filter(Part.id == mil_order.part_id).first()
+    if not part:
+        raise HTTPException(status_code=404, detail="Part not found for military order")
+
+    sku = part.part_id
+
+    # Run MRP for the new demand
+    log = _sys_log(
+        db,
+        f"Core-Guard running MRP for surge demand: {new_qty}x {sku} ({part.description}).",
+        "info",
+        agent="Core-Guard",
+    )
+    all_logs.append(log)
+    await emit_logs([log])
+
+    mrp_result = calculate_net_requirements(db, sku, new_qty)
+    all_logs.extend(mrp_result["logs"])
+    await emit_logs(mrp_result["logs"])
+
+    # Ring-fence inventory for the military order
+    ring_fenced_parts: list[dict[str, Any]] = []
+    bom_entries = db.query(BOMEntry).filter(BOMEntry.parent_id == part.id).all()
+
+    for bom in bom_entries:
+        component = bom.component
+        ring_qty = min(new_qty * bom.quantity_per, component.inventory.available if component.inventory else 0)
+        if ring_qty > 0:
+            rf_result = ring_fence_inventory(db, component.part_id, mil_order.order_number, ring_qty)
+            all_logs.extend(rf_result["logs"])
+            await emit_logs(rf_result["logs"])
+            ring_fenced_parts.append({
+                "part_id": component.part_id,
+                "qty_ring_fenced": rf_result["qty_ring_fenced"],
+                "success": rf_result["success"],
+            })
+
+    # Identify displaced orders (other open orders competing for same parts)
+    displaced_orders: list[dict[str, Any]] = []
+    other_orders = (
+        db.query(SalesOrder)
+        .filter(
+            SalesOrder.id != mil_order.id,
+            SalesOrder.status == SalesOrderStatus.OPEN,
+        )
+        .all()
+    )
+
+    for order in other_orders:
+        order_part = db.query(Part).filter(Part.id == order.part_id).first()
+        if order_part:
+            # Check if this order uses any of the same components
+            order_bom = db.query(BOMEntry).filter(BOMEntry.parent_id == order_part.id).all()
+            shared = [b.component.part_id for b in order_bom for rb in bom_entries
+                      if b.component_id == rb.component_id]
+            if shared:
+                displaced_orders.append({
+                    "order_number": order.order_number,
+                    "sku": order_part.part_id,
+                    "quantity": order.quantity,
+                    "priority": order.priority,
+                    "shared_components": list(set(shared)),
+                })
+                log = _sys_log(
+                    db,
+                    f"DISPLACED: Order {order.order_number} ({order_part.part_id}, {order.quantity} units, "
+                    f"priority: {order.priority}) may be delayed — shares {', '.join(set(shared))} with military surge.",
+                    "warning",
+                    agent="Core-Guard",
+                )
+                all_logs.append(log)
+                await emit_logs([log])
+
+    # Ghost-Writer processes buy orders
+    buy_orders = [a for a in mrp_result["actions"] if a["type"] == "BUY_ORDER"]
+    ghost_result: dict[str, Any] = {"purchase_orders": [], "logs": []}
+    if buy_orders:
+        ghost_result = process_buy_orders(db, buy_orders)
+        all_logs.extend(ghost_result["logs"])
+        await emit_logs(ghost_result["logs"])
+
+    summary = _sys_log(
+        db,
+        f"Military surge response complete: {mil_order.order_number} scaled to {new_qty} units. "
+        f"{len(ring_fenced_parts)} component(s) ring-fenced, {len(displaced_orders)} order(s) displaced, "
+        f"{len(ghost_result['purchase_orders'])} PO(s) generated.",
+        "success",
+    )
+    all_logs.append(summary)
+    await emit_logs([summary])
+
+    db.commit()
+
+    return {
+        "status": "simulation_complete",
+        "scenario": "MILITARY_SURGE",
+        "order_number": mil_order.order_number,
+        "original_qty": original_qty,
+        "new_qty": new_qty,
+        "deadline_days": deadline_days,
+        "ring_fenced_parts": ring_fenced_parts,
+        "displaced_orders": displaced_orders,
+        "procurement": ghost_result["purchase_orders"],
+        "logs": all_logs,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Scenario 14: Semiconductor Allocation
+# ---------------------------------------------------------------------------
+
+@router.post("/semiconductor-allocation", response_model=SemiconductorAllocationResponse)
+async def simulate_semiconductor_allocation(
+    part_id: str = Query(default="MCU-241"),
+    capacity_reduction_pct: float = Query(default=60.0, ge=10.0, le=90.0),
+    allocation_weeks: int = Query(default=26, ge=4, le=52),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """
+    Scenario 14: Supplier announces allocation — capacity drops significantly.
+    Part Agent recalculates runway; system evaluates product mix prioritization.
+    """
+    all_logs: list[dict[str, str]] = []
+
+    part = db.query(Part).filter(Part.part_id == part_id).first()
+    if not part:
+        raise HTTPException(status_code=404, detail=f"Part '{part_id}' not found")
+
+    supplier = part.supplier
+    original_capacity = supplier.capacity_per_month if supplier and supplier.capacity_per_month else 1000
+    reduced_capacity = int(original_capacity * (1 - capacity_reduction_pct / 100))
+
+    log = _sys_log(
+        db,
+        f"SEMICONDUCTOR ALLOCATION: {supplier.name if supplier else 'Unknown'} announces {capacity_reduction_pct}% "
+        f"capacity reduction on {part_id} ({part.description}). "
+        f"Capacity: {original_capacity}/month → {reduced_capacity}/month for {allocation_weeks} weeks.",
+        "error",
+    )
+    all_logs.append(log)
+    await emit_logs([log])
+
+    # Part Agent: Recalculate runway with reduced supply rate
+    inv = part.inventory
+    if inv:
+        log = _sys_log(
+            db,
+            f"Current inventory: {part_id} on_hand={inv.on_hand}, safety_stock={inv.safety_stock}, "
+            f"burn_rate={inv.daily_burn_rate}/day. Allocation period: {allocation_weeks} weeks.",
+            "info",
+            agent="Part-Agent",
+        )
+        all_logs.append(log)
+        await emit_logs([log])
+
+        days_in_allocation = allocation_weeks * 7
+        total_supply_during_allocation = reduced_capacity * (allocation_weeks / 4.33)
+        total_demand_during_allocation = inv.daily_burn_rate * days_in_allocation
+        projected_gap = total_demand_during_allocation - (inv.available + total_supply_during_allocation)
+
+        log = _sys_log(
+            db,
+            f"Projection over {allocation_weeks} weeks: demand={total_demand_during_allocation:.0f}, "
+            f"supply={total_supply_during_allocation:.0f} + on_hand={inv.available}. "
+            f"Gap: {projected_gap:.0f} units.",
+            "error" if projected_gap > 0 else "success",
+            agent="Part-Agent",
+        )
+        all_logs.append(log)
+        await emit_logs([log])
+
+    # Find all finished goods that use this part (affected products)
+    bom_entries = db.query(BOMEntry).filter(BOMEntry.component_id == part.id).all()
+    affected_products: list[str] = []
+    product_mix: list[dict[str, Any]] = []
+
+    for bom in bom_entries:
+        parent = bom.parent
+        # Walk up if parent is a sub-assembly
+        parent_bom = db.query(BOMEntry).filter(BOMEntry.component_id == parent.id).all()
+        if parent_bom:
+            for pb in parent_bom:
+                fg = pb.parent
+                if fg.part_id not in affected_products:
+                    affected_products.append(fg.part_id)
+                    product_mix.append({
+                        "sku": fg.part_id,
+                        "description": fg.description,
+                        "criticality": fg.criticality.value,
+                        "qty_per": bom.quantity_per * pb.quantity_per,
+                    })
+        else:
+            if parent.part_id not in affected_products:
+                affected_products.append(parent.part_id)
+                product_mix.append({
+                    "sku": parent.part_id,
+                    "description": parent.description,
+                    "criticality": parent.criticality.value,
+                    "qty_per": bom.quantity_per,
+                })
+
+    # Sort by criticality for product mix recommendation
+    crit_order = {"CRITICAL": 0, "HIGH": 1, "MEDIUM": 2, "LOW": 3}
+    product_mix.sort(key=lambda x: crit_order.get(x["criticality"], 99))
+
+    for i, pm in enumerate(product_mix, 1):
+        monthly_allocation = reduced_capacity // max(len(product_mix), 1)
+        pm["monthly_allocation"] = monthly_allocation
+        pm["priority"] = i
+        log = _sys_log(
+            db,
+            f"Product mix priority {i}: {pm['sku']} ({pm['description']}) — "
+            f"criticality [{pm['criticality']}], {pm['qty_per']}x per unit. "
+            f"Allocated: {monthly_allocation}/month.",
+            "info",
+            agent="Core-Guard",
+        )
+        all_logs.append(log)
+        await emit_logs([log])
+
+    # Run MRP for the highest-priority affected product
+    ghost_result: dict[str, Any] = {"purchase_orders": [], "logs": []}
+    if affected_products:
+        mrp_result = calculate_net_requirements(db, affected_products[0], 200)
+        all_logs.extend(mrp_result["logs"])
+        await emit_logs(mrp_result["logs"])
+
+        buy_orders = [a for a in mrp_result["actions"] if a["type"] == "BUY_ORDER"]
+        if buy_orders:
+            ghost_result = process_buy_orders(db, buy_orders)
+            all_logs.extend(ghost_result["logs"])
+            await emit_logs(ghost_result["logs"])
+
+    summary = _sys_log(
+        db,
+        f"Semiconductor allocation analysis complete: {part_id} capacity reduced {capacity_reduction_pct}% "
+        f"for {allocation_weeks} weeks. {len(affected_products)} product(s) affected, "
+        f"{len(ghost_result['purchase_orders'])} PO(s) generated.",
+        "success",
+    )
+    all_logs.append(summary)
+    await emit_logs([summary])
+
+    db.commit()
+
+    return {
+        "status": "simulation_complete",
+        "scenario": "SEMICONDUCTOR_ALLOCATION",
+        "part_id": part_id,
+        "original_capacity": original_capacity,
+        "reduced_capacity": reduced_capacity,
+        "allocation_weeks": allocation_weeks,
+        "affected_products": affected_products,
+        "product_mix_recommendation": product_mix,
+        "procurement": ghost_result["purchase_orders"],
+        "logs": all_logs,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Scenario 15: Seasonal Ramp
+# ---------------------------------------------------------------------------
+
+@router.post("/seasonal-ramp", response_model=SeasonalRampResponse)
+async def simulate_seasonal_ramp(
+    deviation_pct: float = Query(default=40.0, ge=10.0, le=100.0),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """
+    Scenario 15: Peak season orders arrive above forecast.
+    AURA detects deviation; Core-Guard pre-positions inventory.
+    """
+    all_logs: list[dict[str, str]] = []
+
+    log = _sys_log(
+        db,
+        f"SEASONAL RAMP: Actual demand exceeding forecast by {deviation_pct}% across product lines.",
+        "warning",
+    )
+    all_logs.append(log)
+    await emit_logs([log])
+
+    # Find all products with demand forecasts
+    forecasts = db.query(DemandForecast).all()
+    affected_products: list[str] = []
+    pre_positioned_parts: list[dict[str, Any]] = []
+
+    # Group forecasts by part
+    parts_with_forecasts: dict[int, list[DemandForecast]] = {}
+    for f in forecasts:
+        parts_with_forecasts.setdefault(f.part_id, []).append(f)
+
+    for part_id, part_forecasts in parts_with_forecasts.items():
+        part = db.query(Part).filter(Part.id == part_id).first()
+        if not part:
+            continue
+
+        # Only process finished goods
+        from database.models import PartCategory
+        if part.category != PartCategory.FINISHED_GOOD:
+            continue
+
+        total_forecast = sum(f.forecast_qty for f in part_forecasts)
+        actual_demand = int(total_forecast * (1 + deviation_pct / 100))
+        deviation_units = actual_demand - total_forecast
+
+        if part.part_id not in affected_products:
+            affected_products.append(part.part_id)
+
+        log = _sys_log(
+            db,
+            f"AURA detects forecast deviation: {part.part_id} ({part.description}) — "
+            f"forecast {total_forecast}, actual demand ~{actual_demand} (+{deviation_pct}%, +{deviation_units} units).",
+            "warning",
+            agent="AURA",
+        )
+        all_logs.append(log)
+        await emit_logs([log])
+
+        # Run MRP for the excess demand
+        mrp_result = calculate_net_requirements(db, part.part_id, actual_demand)
+        all_logs.extend(mrp_result["logs"])
+        await emit_logs(mrp_result["logs"])
+
+        # Track pre-positioned parts (components that need ordering)
+        for shortage in mrp_result.get("shortages", []):
+            pre_positioned_parts.append({
+                "part_id": shortage["part_id"],
+                "parent_sku": part.part_id,
+                "gap": shortage["gap"],
+                "criticality": shortage["criticality"],
+            })
+
+        # Ghost-Writer processes buy orders for this product
+        buy_orders = [a for a in mrp_result["actions"] if a["type"] == "BUY_ORDER"]
+        if buy_orders:
+            ghost_result = process_buy_orders(db, buy_orders)
+            all_logs.extend(ghost_result["logs"])
+            await emit_logs(ghost_result["logs"])
+
+    # Collect all POs from this simulation
+    all_pos = (
+        db.query(AgentLog)
+        .filter(AgentLog.agent == "Ghost-Writer", AgentLog.message.like("%PO-%"))
+        .order_by(AgentLog.id.desc())
+        .limit(20)
+        .all()
+    )
+
+    # Re-run ghost_writer for a summary of all POs generated
+    # For the response, collect POs generated during this simulation
+    ghost_result_final: dict[str, Any] = {"purchase_orders": [], "logs": []}
+
+    summary = _sys_log(
+        db,
+        f"Seasonal ramp analysis complete: {deviation_pct}% above forecast. "
+        f"{len(affected_products)} product(s) affected, "
+        f"{len(pre_positioned_parts)} component(s) need pre-positioning.",
+        "success",
+    )
+    all_logs.append(summary)
+    await emit_logs([summary])
+
+    db.commit()
+
+    return {
+        "status": "simulation_complete",
+        "scenario": "SEASONAL_RAMP",
+        "forecast_deviation_pct": deviation_pct,
+        "affected_products": affected_products,
+        "pre_positioned_parts": pre_positioned_parts,
+        "procurement": ghost_result_final["purchase_orders"],
         "logs": all_logs,
     }
 

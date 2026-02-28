@@ -6,6 +6,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Flame, TrendingUp, XCircle, CheckCircle, AlertCircle,
   Layers, DollarSign, WifiOff, RefreshCw, Zap,
+  Activity, Ghost, GitMerge,
+  FileText, Globe, Box, Shield, Cpu, Sun,
 } from "lucide-react";
 import { api } from "@/lib/api";
 
@@ -81,6 +83,84 @@ export function GodMode({
       icon: WifiOff,
       color: "bg-gray-600 hover:bg-gray-500",
       action: () => api.simulateFullBlackout(),
+    },
+  ];
+
+  const partAgentScenarios: Scenario[] = [
+    {
+      id: "slow-bleed",
+      label: "Slow Bleed",
+      description: "Gradual burn rate increase with no external trigger. Part Agent is the ONLY agent that detects the silent drift toward stockout.",
+      icon: Activity,
+      color: "bg-teal-600 hover:bg-teal-500",
+      action: () => api.simulateSlowBleed(),
+    },
+    {
+      id: "inventory-decay",
+      label: "Inventory Decay",
+      description: "Part Agent initially reports all-clear, then Data Integrity reveals ghost and suspect stock hiding behind healthy numbers.",
+      icon: Ghost,
+      color: "bg-amber-600 hover:bg-amber-500",
+      action: () => api.simulateInventoryDecay(),
+    },
+    {
+      id: "multi-sku-contention",
+      label: "Multi-SKU Contention",
+      description: "FL-001-T and FL-001-S compete for shared CH-101 chassis. Part Agent detects contention, Core-Guard applies criticality-based prioritization.",
+      icon: GitMerge,
+      color: "bg-indigo-600 hover:bg-indigo-500",
+      action: () => api.simulateMultiSkuContention(),
+    },
+  ];
+
+  const supplyChainScenarios: Scenario[] = [
+    {
+      id: "contract-exhaustion",
+      label: "Contract Exhaustion",
+      description: "Blanket PO with CREE is 90% consumed. Ghost-Writer evaluates: extend contract, spot buy at premium, or renegotiate terms.",
+      icon: FileText,
+      color: "bg-rose-600 hover:bg-rose-500",
+      action: () => api.simulateContractExhaustion(),
+    },
+    {
+      id: "tariff-shock",
+      label: "Tariff Shock",
+      description: "25% tariff hits Chinese suppliers overnight. Core-Guard recalculates costs and evaluates switching to US/EU alternates.",
+      icon: Globe,
+      color: "bg-sky-600 hover:bg-sky-500",
+      action: () => api.simulateTariffShock("CHINA", 25),
+    },
+    {
+      id: "moq-trap",
+      label: "MOQ Trap",
+      description: "Need 80 LEDs but MOQ is 500. Ghost-Writer compares: buy excess and eat carry cost, or pay 15% small-lot premium.",
+      icon: Box,
+      color: "bg-lime-600 hover:bg-lime-500",
+      action: () => api.simulateMoqTrap(),
+    },
+    {
+      id: "military-surge",
+      label: "Military Surge",
+      description: "VIP military order doubles to 400 units with 21-day deadline. Core-Guard ring-fences inventory, displacing lower-priority orders.",
+      icon: Shield,
+      color: "bg-emerald-600 hover:bg-emerald-500",
+      action: () => api.simulateMilitarySurge(),
+    },
+    {
+      id: "semiconductor-allocation",
+      label: "Semiconductor Allocation",
+      description: "MCU-241 supplier announces 60% capacity cut for 26 weeks. System evaluates product mix prioritization by criticality.",
+      icon: Cpu,
+      color: "bg-cyan-600 hover:bg-cyan-500",
+      action: () => api.simulateSemiconductorAllocation(),
+    },
+    {
+      id: "seasonal-ramp",
+      label: "Seasonal Ramp",
+      description: "Peak season demand arrives 40% above forecast across all product lines. AURA detects deviation, Core-Guard pre-positions inventory.",
+      icon: Sun,
+      color: "bg-orange-500 hover:bg-orange-400",
+      action: () => api.simulateSeasonalRamp(),
     },
   ];
 
@@ -175,6 +255,112 @@ export function GodMode({
             </Card>
           );
         })}
+      </div>
+
+      {/* Part Agent Spotlight Section */}
+      <div className="pt-4 border-t border-border">
+        <div className="flex items-center gap-2 mb-1">
+          <Activity className="h-4 w-4 text-teal-400" />
+          <h3 className="text-sm font-semibold text-foreground">Part Agent Spotlight</h3>
+        </div>
+        <p className="text-xs text-muted-foreground mb-4">
+          Scenarios where the Part Agent&apos;s autonomous monitoring drives the response
+        </p>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {partAgentScenarios.map((scenario) => {
+            const Icon = scenario.icon;
+            const result = results[scenario.id];
+            const isRunning = result?.status === "running";
+
+            return (
+              <Card key={scenario.id} className="bg-card border-border flex flex-col">
+                <CardHeader className="pb-2">
+                  <CardTitle className="flex items-center gap-2 text-sm font-semibold text-foreground">
+                    <Icon className="h-4 w-4 shrink-0" />
+                    {scenario.label}
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="flex flex-col flex-1 justify-between">
+                  <p className="text-xs text-muted-foreground mb-4 leading-relaxed">{scenario.description}</p>
+
+                  {result?.status === "success" && (
+                    <div className="flex items-center gap-1.5 mb-2">
+                      <CheckCircle className="h-3.5 w-3.5 text-green-400 shrink-0" />
+                      <span className="text-xs text-green-400">{result.message}</span>
+                    </div>
+                  )}
+                  {result?.status === "error" && (
+                    <div className="flex items-center gap-1.5 mb-2">
+                      <AlertCircle className="h-3.5 w-3.5 text-red-400 shrink-0" />
+                      <span className="text-xs text-red-400">{result.message}</span>
+                    </div>
+                  )}
+
+                  <Button
+                    className={`w-full ${scenario.color} text-white text-xs`}
+                    onClick={() => handleRun(scenario)}
+                    disabled={isAnyRunning || resetting}
+                  >
+                    {isRunning ? "Running..." : "Inject Chaos"}
+                  </Button>
+                </CardContent>
+              </Card>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Supply Chain Scenarios Section */}
+      <div className="pt-4 border-t border-border">
+        <div className="flex items-center gap-2 mb-1">
+          <Globe className="h-4 w-4 text-sky-400" />
+          <h3 className="text-sm font-semibold text-foreground">Supply Chain Scenarios</h3>
+        </div>
+        <p className="text-xs text-muted-foreground mb-4">
+          Contract, procurement, and geopolitical disruption scenarios
+        </p>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {supplyChainScenarios.map((scenario) => {
+            const Icon = scenario.icon;
+            const result = results[scenario.id];
+            const isRunning = result?.status === "running";
+
+            return (
+              <Card key={scenario.id} className="bg-card border-border flex flex-col">
+                <CardHeader className="pb-2">
+                  <CardTitle className="flex items-center gap-2 text-sm font-semibold text-foreground">
+                    <Icon className="h-4 w-4 shrink-0" />
+                    {scenario.label}
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="flex flex-col flex-1 justify-between">
+                  <p className="text-xs text-muted-foreground mb-4 leading-relaxed">{scenario.description}</p>
+
+                  {result?.status === "success" && (
+                    <div className="flex items-center gap-1.5 mb-2">
+                      <CheckCircle className="h-3.5 w-3.5 text-green-400 shrink-0" />
+                      <span className="text-xs text-green-400">{result.message}</span>
+                    </div>
+                  )}
+                  {result?.status === "error" && (
+                    <div className="flex items-center gap-1.5 mb-2">
+                      <AlertCircle className="h-3.5 w-3.5 text-red-400 shrink-0" />
+                      <span className="text-xs text-red-400">{result.message}</span>
+                    </div>
+                  )}
+
+                  <Button
+                    className={`w-full ${scenario.color} text-white text-xs`}
+                    onClick={() => handleRun(scenario)}
+                    disabled={isAnyRunning || resetting}
+                  >
+                    {isRunning ? "Running..." : "Inject Chaos"}
+                  </Button>
+                </CardContent>
+              </Card>
+            );
+          })}
+        </div>
       </div>
 
       {/* Reset Button */}
