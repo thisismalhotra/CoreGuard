@@ -1,9 +1,25 @@
 const API_BASE = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
 
 async function fetchJSON<T>(path: string, options?: RequestInit): Promise<T> {
-  const res = await fetch(`${API_BASE}${path}`, options);
-  if (!res.ok) throw new Error(`API error: ${res.status}`);
-  return res.json();
+  const method = options?.method?.toUpperCase() || "GET";
+  const maxRetries = ["GET", "HEAD", "OPTIONS"].includes(method) ? 3 : 0;
+  let lastError: Error | null = null;
+
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      const res = await fetch(`${API_BASE}${path}`, options);
+      if (!res.ok) throw new Error(`API error: ${res.status}`);
+      return res.json();
+    } catch (err) {
+      lastError = err instanceof Error ? err : new Error(String(err));
+      // Don't retry 4xx client errors (except 429 Too Many Requests)
+      if (lastError.message.match(/API error: 4[0-2][0-9]|API error: 43[0-9]|API error: 44[0-9]/)) throw lastError;
+      if (attempt < maxRetries) {
+        await new Promise((resolve) => setTimeout(resolve, 500 * Math.pow(2, attempt)));
+      }
+    }
+  }
+  throw lastError!;
 }
 
 export type InventoryItem = {
