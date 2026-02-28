@@ -72,7 +72,7 @@ All agents operate under **Bounded Autonomy** — math is deterministic Python, 
 **GTM Advantage:** Zero integration risk — reads data only, never writes to external systems
 
 **Capabilities:**
-- Predictive Zero-Day Shortage Alerts ("Part CH-101 will hit zero on Oct 14th based on new demand velocity")
+- Predictive Zero-Day Shortage Alerts ("Part CH-231 will hit zero on Oct 14th based on new demand velocity")
 - Multi-BOM Blast Radius Analysis (which finished goods are impacted by one missing part, and what revenue is at risk)
 - Dynamic Digital Ring-Fencing (allocated inventory is protected from cannibalization by other orders)
 - One-Click Drafted Recommendations (math + reason + action on a single card for buyer review)
@@ -130,9 +130,10 @@ if total_cost > 5000:
 |---|---|---|---|
 | `FL-001-T` | Tactical Flashlight | Finished Good | N/A |
 | `FL-001-S` | Standard Flashlight | Finished Good | N/A |
-| `CH-101` | Modular Chassis | Common Core | AluForge |
-| `SW-303` | Switch Assembly | Common Core | MicroConnect |
-| `LNS-505` | Optic Lens | Common Core | Precision Optic |
+| `CH-231` | Body Tube (6061-T6 Aluminum) | Component | Apex CNC Works |
+| `SW-232` | Reverse-Click Tail Switch Assembly | Component | Dongguan SwitchTech |
+| `LNS-221` | TIR Optic Lens (Polycarbonate) | Component | Jiangsu OptiMold |
+| `LED-201` | CREE XHP70.3 HI | Component | CREE Inc. |
 
 ---
 
@@ -346,32 +347,32 @@ npm run dev
 Trigger: POST /simulate/spike { sku: "FL-001-T", multiplier: 3.0 }
 Expected Flow:
   Aura detects 300% sales spike on Shopify
-  → Part Agent: CH-101 runway drops to 8 days (supplier lead time: 12 days)
-  → Core-Guard: Net Requirement = (3000 + 200) - (500 + 0) = 2700 units SHORT
-  → Core-Guard: Ring-fence existing 500 for existing VIP order
-  → Ghost-Writer: Drafts PO to AluForge for 2700 units at $4.50/ea = $12,150
+  → Part Agent: CH-231 runway drops to 8 days (supplier lead time: 14 days)
+  → Core-Guard: Net Requirement = (3000 + 225) - (280 + 0) = 2945 units SHORT
+  → Core-Guard: Ring-fence existing 280 for existing VIP order
+  → Ghost-Writer: Drafts PO to Apex CNC Works for 2945 units
   → CONSTITUTION TRIGGERED: total_cost > $5,000 → status = PENDING_APPROVAL
   → Dashboard: Approval card appears in Inbox
 ```
 
 ### Scenario B — Supply Shock
 ```
-Trigger: POST /simulate/shock { supplier_id: "AluForge", delay_days: 30 }
+Trigger: POST /simulate/supply-shock { supplier_name: "CREE Inc." }
 Expected Flow:
-  Aura detects port disruption (simulated)
-  → Part Agent: CH-101 new runway = 8 days (reduced by 30-day delay)
-  → Core-Guard: Blast Radius = FL-001-T at risk ($450k revenue), FL-001-S at risk ($220k)
-  → Ghost-Writer: Cannot use AluForge (lead time > runway)
-  → Ghost-Writer: Pivots to secondary local supplier; drafts expedited PO
+  CREE Inc. goes offline (simulated)
+  → Part Agent: LED-201 new runway drops (supplier lead time: 42 days)
+  → Core-Guard: Blast Radius = FL-001-T at risk, HL-002-P at risk
+  → Ghost-Writer: Cannot use CREE Inc. (offline)
+  → Ghost-Writer: Pivots to secondary supplier (Luminus Devices); drafts expedited PO
   → Dashboard: Cost-vs-risk trade-off card shown to buyer
 ```
 
 ### Scenario C — Quality Fail
 ```
-Trigger: POST /simulate/quality_fail { part_id: "CH-101", defect_rate: 0.15 }
+Trigger: POST /simulate/quality-fail { part_id: "CH-231", batch_size: 150 }
 Expected Flow:
   Eagle-Eye: Compares incoming inspection report to blueprint specs
-  → 15% of batch out of tolerance on hole diameter
+  → Hardness / dimension tolerance out of spec
   → Eagle-Eye: Quarantines 150 units; flags for human review
   → Dashboard: Quality alert shown with discrepancy details
   → Human clicks Override & Approve OR Reject Shipment

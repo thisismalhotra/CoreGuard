@@ -90,24 +90,25 @@ The simulation engine supports 6 chaos scenarios plus a reset:
 | Scenario             | What Happens                                          | Tests                                    |
 |----------------------|-------------------------------------------------------|------------------------------------------|
 | 300% Demand Spike    | Aura detects surge, full agent chain executes          | Normal MRP + PO flow                     |
-| Supplier Fire        | AluForge goes offline, emergency reorder from alternates | Supplier failover                       |
-| Quality Fail         | CH-101 batch fails inspection, quarantine + reorder    | Eagle-Eye inspection pipeline            |
-| Cascade Failure      | 500% spike + AluForge offline simultaneously           | Multi-crisis coordination                |
+| Supplier Fire        | CREE Inc. goes offline, emergency reorder from alternates | Supplier failover                       |
+| Quality Fail         | CH-231 batch fails inspection, quarantine + reorder    | Eagle-Eye inspection pipeline            |
+| Cascade Failure      | 500% spike + CREE Inc. offline simultaneously          | Multi-crisis coordination                |
 | Constitution Breach  | 800% spike forces POs over $5k limit                   | Financial guardrail enforcement          |
 | Full Blackout        | All 22 suppliers offline + demand spike                | System halt + human escalation           |
 | Reset                | Drop all tables, re-seed FL-001 data                   | Fresh state for demo                     |
 
 ## Ground Truth Data (FL-001)
 
-| Part ID  | Description         | Category      | Criticality | Supplier        |
-|----------|---------------------|---------------|-------------|-----------------|
-| FL-001-T | Tactical Flashlight | Finished Good | HIGH        | N/A             |
-| FL-001-S | Standard Flashlight | Finished Good | MEDIUM      | N/A             |
-| CH-101   | Modular Chassis     | Common Core   | CRITICAL    | AluForge        |
-| SW-303   | Switch Assembly     | Common Core   | MEDIUM      | MicroConnect    |
-| LNS-505  | Optic Lens          | Common Core   | HIGH        | Precision Optic |
+| Part ID  | Description                        | Category      | Criticality | Supplier            |
+|----------|------------------------------------|---------------|-------------|---------------------|
+| FL-001-T | Tactical Flashlight                | Finished Good | CRITICAL    | N/A                 |
+| FL-001-S | Standard Flashlight                | Finished Good | HIGH        | N/A                 |
+| CH-231   | Body Tube (6061-T6 Aluminum)       | Component     | HIGH        | Apex CNC Works      |
+| SW-232   | Reverse-Click Tail Switch Assembly | Component     | MEDIUM      | Dongguan SwitchTech |
+| LNS-221  | TIR Optic Lens (Polycarbonate)     | Component     | HIGH        | Jiangsu OptiMold    |
+| LED-201  | CREE XHP70.3 HI                    | Component     | CRITICAL    | CREE Inc.           |
 
-22 suppliers seeded (3 primary + 19 alternates).
+84 parts across 6 finished goods, 22 suppliers seeded.
 
 ## Architectural Rules
 

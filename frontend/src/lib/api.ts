@@ -78,12 +78,12 @@ export const api = {
       `/api/simulate/spike?sku=${sku}&multiplier=${multiplier}`,
       { method: "POST" }
     ),
-  simulateSupplyShock: (supplier = "AluForge") =>
+  simulateSupplyShock: (supplier = "CREE Inc.") =>
     fetchJSON<Record<string, unknown>>(
       `/api/simulate/supply-shock?supplier_name=${supplier}`,
       { method: "POST" }
     ),
-  simulateQualityFail: (partId = "CH-101", batchSize = 150) =>
+  simulateQualityFail: (partId = "CH-231", batchSize = 150) =>
     fetchJSON<Record<string, unknown>>(
       `/api/simulate/quality-fail?part_id=${partId}&batch_size=${batchSize}`,
       { method: "POST" }
@@ -94,7 +94,7 @@ export const api = {
     fetchJSON<Record<string, unknown>>("/api/simulate/constitution-breach", { method: "POST" }),
   simulateFullBlackout: () =>
     fetchJSON<Record<string, unknown>>("/api/simulate/full-blackout", { method: "POST" }),
-  simulateSlowBleed: (partId = "CH-101") =>
+  simulateSlowBleed: (partId = "CH-231") =>
     fetchJSON<Record<string, unknown>>(
       `/api/simulate/slow-bleed?part_id=${partId}`,
       { method: "POST" }
@@ -130,7 +130,7 @@ export const api = {
       `/api/simulate/seasonal-ramp?deviation_pct=${deviationPct}`,
       { method: "POST" }
     ),
-  simulateDemandHorizon: (partId = "CH-101", demandQty = 500, daysUntilNeeded = 30) =>
+  simulateDemandHorizon: (partId = "CH-231", demandQty = 500, daysUntilNeeded = 30) =>
     fetchJSON<Record<string, unknown>>(
       `/api/simulate/demand-horizon?part_id=${partId}&demand_qty=${demandQty}&days_until_needed=${daysUntilNeeded}`,
       { method: "POST" }

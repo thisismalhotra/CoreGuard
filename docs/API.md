@@ -20,14 +20,14 @@ Returns current inventory levels for all parts.
 ```json
 [
   {
-    "part_id": "CH-101",
-    "description": "Modular Chassis",
-    "category": "Common Core",
-    "on_hand": 500,
-    "safety_stock": 200,
-    "reserved": 100,
-    "available": 400,
-    "supplier": "AluForge"
+    "part_id": "CH-231",
+    "description": "Body Tube (6061-T6 Aluminum)",
+    "category": "Component",
+    "on_hand": 280,
+    "safety_stock": 225,
+    "reserved": 30,
+    "available": 250,
+    "supplier": "Apex CNC Works"
   }
 ]
 ```
@@ -41,8 +41,8 @@ Returns all purchase orders, newest first.
 [
   {
     "po_number": "PO-A1B2C3D4",
-    "part_id": "CH-101",
-    "supplier": "AluForge",
+    "part_id": "CH-231",
+    "supplier": "Apex CNC Works",
     "quantity": 150,
     "unit_cost": 12.50,
     "total_cost": 1875.00,
@@ -64,9 +64,9 @@ Returns all suppliers with their status.
 [
   {
     "id": 1,
-    "name": "AluForge",
-    "lead_time_days": 5,
-    "reliability_score": 0.97,
+    "name": "CREE Inc.",
+    "lead_time_days": 42,
+    "reliability_score": 0.94,
     "is_active": true
   }
 ]
@@ -199,8 +199,8 @@ Triggers: Aura → Dispatcher → Core-Guard → Ghost-Writer
   "multiplier": 3.0,
   "aura": { "spike_detected": true, "multiplier": 3.0 },
   "mrp": {
-    "shortages": [{ "part_id": "CH-101", "required": 600, "available": 400, "gap": 200, "criticality": "CRITICAL" }],
-    "actions": [{ "type": "BUY_ORDER", "part_id": "CH-101", "quantity": 300, "total_cost": 3750.00 }]
+    "shortages": [{ "part_id": "CH-231", "required": 600, "available": 250, "gap": 350, "criticality": "HIGH" }],
+    "actions": [{ "type": "BUY_ORDER", "part_id": "CH-231", "quantity": 350, "total_cost": 6475.00 }]
   },
   "procurement": {
     "purchase_orders": [{ "po_number": "PO-A1B2C3D4", "status": "APPROVED" }]
@@ -217,7 +217,7 @@ Disables a supplier and triggers emergency reorders from the best alternate.
 
 | Parameter       | Type   | Default  | Description              |
 |----------------|--------|----------|--------------------------|
-| `supplier_name` | string | AluForge | Supplier to take offline  |
+| `supplier_name` | string | CREE Inc. | Supplier to take offline  |
 
 **Agent chain:** System → Core-Guard (impact assessment) → Ghost-Writer (emergency POs)
 
@@ -229,7 +229,7 @@ Eagle-Eye inspects an incoming batch, forces failure, quarantines, and triggers 
 
 | Parameter    | Type   | Default | Description              |
 |-------------|--------|---------|--------------------------|
-| `part_id`   | string | CH-101  | Part to inspect           |
+| `part_id`   | string | CH-231  | Part to inspect           |
 | `batch_size` | int    | 150     | Units in the shipment     |
 
 **Agent chain:** Eagle-Eye → Ghost-Writer (emergency reorder)
@@ -238,7 +238,7 @@ Eagle-Eye inspects an incoming batch, forces failure, quarantines, and triggers 
 
 **Scenario D: Cascade Failure**
 
-AluForge goes offline at the same moment a 500% demand spike hits FL-001-T. Tests multi-agent coordination under compounding stress.
+CREE Inc. goes offline at the same moment a 500% demand spike hits FL-001-T. Tests multi-agent coordination under compounding stress.
 
 No parameters. Automatically reroutes orders to the best alternate supplier.
 

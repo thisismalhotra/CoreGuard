@@ -71,7 +71,7 @@ def evaluate_demand_horizon(
 
     Args:
         db: Database session
-        part_id_str: Part ID (e.g., "CH-101")
+        part_id_str: Part ID (e.g., "CH-231")
         demand_qty: Quantity demanded
         days_until_needed: How many days until the demand must be fulfilled
 

@@ -70,15 +70,16 @@ Hard-code in `ghost_writer.py`: if `total_cost > 5000`, status **must** be `PEND
 
 ## The Data Model (Ground Truth)
 
-Do not hallucinate new parts. Use only the FL-001 dataset:
+Do not hallucinate new parts. Use only the FL-001 dataset (84 parts across 6 finished goods). Representative examples:
 
-| Part ID  | Description        | Category      | Supplier        |
-|----------|--------------------|---------------|-----------------|
-| FL-001-T | Tactical Flashlight | Finished Good | N/A             |
-| FL-001-S | Standard Flashlight | Finished Good | N/A             |
-| CH-101   | Modular Chassis    | Common Core   | AluForge        |
-| SW-303   | Switch Assembly    | Common Core   | MicroConnect    |
-| LNS-505  | Optic Lens         | Common Core   | Precision Optic |
+| Part ID  | Description                        | Category      | Supplier            |
+|----------|------------------------------------|---------------|---------------------|
+| FL-001-T | Tactical Flashlight                | Finished Good | N/A                 |
+| FL-001-S | Standard Flashlight                | Finished Good | N/A                 |
+| CH-231   | Body Tube (6061-T6 Aluminum)       | Component     | Apex CNC Works      |
+| SW-232   | Reverse-Click Tail Switch Assembly | Component     | Dongguan SwitchTech |
+| LNS-221  | TIR Optic Lens (Polycarbonate)     | Component     | Jiangsu OptiMold    |
+| LED-201  | CREE XHP70.3 HI                    | Component     | CREE Inc.           |
 
 Foreign keys must link Parts to Suppliers in the DB schema.
 
@@ -107,9 +108,9 @@ When writing LangChain prompts, use this structure:
 ```
 SYSTEM: You are Core-Guard, the MRP Logic Agent.
 CONTEXT:
-  - SKU: CH-101
+  - SKU: CH-231
   - On Hand: 150
-  - Safety Stock: 200
+  - Safety Stock: 225
   - Incoming Demand: 400
   - BOM Substitute: FL-001-S has 300 units reserved.
 

@@ -2,10 +2,11 @@
 Agent metadata & DB viewer REST endpoints.
 """
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy.orm import Session
 
 from database.connection import get_db
+from rate_limit import limiter
 from database.models import (
     Supplier, Part, Inventory, BOMEntry, PurchaseOrder,
     DemandForecast, QualityInspection, AgentLog,
@@ -24,7 +25,8 @@ router = APIRouter(prefix="/api", tags=["agents"])
 
 
 @router.get("/agents", response_model=list[AgentMetadata])
-def get_agents() -> list[dict]:
+@limiter.limit("60/minute")
+def get_agents(request: Request) -> list[dict]:
     """Return metadata for all agents in the system."""
     return [
         {
@@ -142,9 +144,9 @@ def get_agents() -> list[dict]:
             "rules": [
                 "Stateless \u2014 operates on DB state passed in",
                 "Compares sensor readings against hard-coded CAD_SPECS tolerances",
-                "CH-101: hardness (8.0\u201310.0), dimension tolerance (\u00b10.05mm)",
-                "SW-303: resistance (4.5\u20135.5\u03a9), cycle life (min 10,000)",
-                "LNS-505: clarity (min 95%), focal length tolerance (\u00b10.1mm)",
+                "CH-231: hardness (8.0\u201310.0), dimension tolerance (\u00b10.05mm)",
+                "SW-232: resistance (4.5\u20135.5\u03a9), cycle life (min 10,000)",
+                "LNS-221: clarity (min 95%), focal length tolerance (\u00b10.1mm)",
                 "FAIL \u2192 quarantine batch (stock NOT added), trigger emergency reorder",
                 "PASS \u2192 add batch to inventory on_hand",
                 "AI Handover: in production, would use Pinecone vector DB for CAD comparisons",
@@ -197,7 +199,9 @@ def get_agents() -> list[dict]:
 # --- DB Viewer ---
 
 @router.get("/db/suppliers", response_model=list[DBSupplierRow])
+@limiter.limit("60/minute")
 def db_suppliers(
+    request: Request,
     db: Session = Depends(get_db),
     limit: int = Query(default=100, ge=1, le=1000),
     offset: int = Query(default=0, ge=0),
@@ -219,7 +223,9 @@ def db_suppliers(
 
 
 @router.get("/db/parts", response_model=list[DBPartRow])
+@limiter.limit("60/minute")
 def db_parts(
+    request: Request,
     db: Session = Depends(get_db),
     limit: int = Query(default=100, ge=1, le=1000),
     offset: int = Query(default=0, ge=0),
@@ -237,7 +243,9 @@ def db_parts(
 
 
 @router.get("/db/inventory", response_model=list[DBInventoryRow])
+@limiter.limit("60/minute")
 def db_inventory(
+    request: Request,
     db: Session = Depends(get_db),
     limit: int = Query(default=100, ge=1, le=1000),
     offset: int = Query(default=0, ge=0),
@@ -256,7 +264,9 @@ def db_inventory(
 
 
 @router.get("/db/bom", response_model=list[DBBomRow])
+@limiter.limit("60/minute")
 def db_bom(
+    request: Request,
     db: Session = Depends(get_db),
     limit: int = Query(default=100, ge=1, le=1000),
     offset: int = Query(default=0, ge=0),
@@ -273,7 +283,9 @@ def db_bom(
 
 
 @router.get("/db/orders", response_model=list[DBOrderRow])
+@limiter.limit("60/minute")
 def db_orders(
+    request: Request,
     db: Session = Depends(get_db),
     limit: int = Query(default=100, ge=1, le=1000),
     offset: int = Query(default=0, ge=0),
@@ -293,7 +305,9 @@ def db_orders(
 
 
 @router.get("/db/demand_forecast", response_model=list[DBDemandForecastRow])
+@limiter.limit("60/minute")
 def db_demand_forecast(
+    request: Request,
     db: Session = Depends(get_db),
     limit: int = Query(default=100, ge=1, le=1000),
     offset: int = Query(default=0, ge=0),
@@ -313,7 +327,9 @@ def db_demand_forecast(
 
 
 @router.get("/db/quality_inspections", response_model=list[DBQualityInspectionRow])
+@limiter.limit("60/minute")
 def db_quality_inspections(
+    request: Request,
     db: Session = Depends(get_db),
     limit: int = Query(default=100, ge=1, le=1000),
     offset: int = Query(default=0, ge=0),

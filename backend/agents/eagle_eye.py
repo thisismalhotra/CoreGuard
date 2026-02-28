@@ -22,9 +22,9 @@ AGENT_NAME = "Eagle-Eye"
 
 # CAD Spec tolerances (simulated — would normally come from Pinecone vector DB)
 CAD_SPECS = {
-    "CH-101": {"hardness_min": 8.0, "hardness_max": 10.0, "dimension_tolerance_mm": 0.05},
-    "SW-303": {"resistance_min": 4.5, "resistance_max": 5.5, "cycle_life_min": 10000},
-    "LNS-505": {"clarity_min": 95.0, "focal_length_mm": 25.0, "focal_tolerance_mm": 0.1},
+    "CH-231": {"hardness_min": 8.0, "hardness_max": 10.0, "dimension_tolerance_mm": 0.05},
+    "SW-232": {"resistance_min": 4.5, "resistance_max": 5.5, "cycle_life_min": 10000},
+    "LNS-221": {"clarity_min": 95.0, "focal_length_mm": 25.0, "focal_tolerance_mm": 0.1},
 }
 
 
@@ -85,7 +85,7 @@ def inspect_batch(
     readings: dict[str, Any] = {}
     failed_checks: list[str] = []
 
-    if part_id == "CH-101":
+    if part_id == "CH-231":
         hardness = round(random.uniform(6.5, 7.8) if force_fail else random.uniform(8.5, 9.5), 2)
         dimension_error = round(random.uniform(0.12, 0.18) if force_fail else random.uniform(0.01, 0.04), 3)
         readings = {"hardness": hardness, "dimension_error_mm": dimension_error}
@@ -98,7 +98,7 @@ def inspect_batch(
         if dimension_error > spec["dimension_tolerance_mm"]:
             failed_checks.append(f"Dimension error {dimension_error}mm exceeds tolerance {spec['dimension_tolerance_mm']}mm")
 
-    elif part_id == "SW-303":
+    elif part_id == "SW-232":
         resistance = round(random.uniform(6.0, 7.5) if force_fail else random.uniform(4.7, 5.3), 2)
         cycle_life = int(random.uniform(3000, 5000) if force_fail else random.uniform(12000, 15000))
         readings = {"resistance_ohms": resistance, "cycle_life": cycle_life}
@@ -111,7 +111,7 @@ def inspect_batch(
         if cycle_life < spec["cycle_life_min"]:
             failed_checks.append(f"Cycle life {cycle_life} below minimum {spec['cycle_life_min']}")
 
-    elif part_id == "LNS-505":
+    elif part_id == "LNS-221":
         clarity = round(random.uniform(70.0, 80.0) if force_fail else random.uniform(96.0, 99.0), 1)
         focal_error = round(random.uniform(0.3, 0.5) if force_fail else random.uniform(0.02, 0.08), 3)
         readings = {"clarity_pct": clarity, "focal_error_mm": focal_error}

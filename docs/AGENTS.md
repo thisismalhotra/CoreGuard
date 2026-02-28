@@ -120,16 +120,16 @@ triage_demand_spike(db: Session, sku: str, demand_qty: int) -> dict
 Each item in `priority_queue`:
 ```json
 {
-  "part_id": "CH-101",
-  "criticality": "CRITICAL",
-  "lead_time_sensitivity": 0.95,
+  "part_id": "CH-231",
+  "criticality": "HIGH",
+  "lead_time_sensitivity": 0.85,
   "required": 600,
-  "available": 400,
-  "gap": 200,
-  "gap_severity": 0.33,
-  "priority_score": 135.1,
+  "available": 250,
+  "gap": 350,
+  "gap_severity": 0.58,
+  "priority_score": 112.1,
   "at_risk": true,
-  "substitute_pool_size": 4
+  "substitute_pool_size": 2
 }
 ```
 
@@ -179,7 +179,7 @@ calculate_net_requirements(db: Session, sku: str, demand_qty: int) -> dict
 When a component has a shortage, Core-Guard checks if other finished goods using the same component have excess inventory:
 
 ```python
-# Example: CH-101 is shared by FL-001-T and FL-001-S
+# Example: CH-231 is shared by FL-001-T and FL-001-S
 # If FL-001-S has surplus, Core-Guard can reallocate to cover FL-001-T's gap
 ```
 
@@ -191,22 +191,22 @@ Core-Guard emits two types of actions:
 
 **REALLOCATE:**
 ```json
-{ "type": "REALLOCATE", "part_id": "CH-101", "source_sku": "FL-001-S", "quantity": 50 }
+{ "type": "REALLOCATE", "part_id": "CH-231", "source_sku": "FL-001-S", "quantity": 50 }
 ```
 
 **BUY_ORDER:**
 ```json
 {
   "type": "BUY_ORDER",
-  "part_id": "CH-101",
+  "part_id": "CH-231",
   "quantity": 300,
-  "unit_cost": 12.50,
-  "total_cost": 3750.00,
-  "supplier_id": 1,
-  "supplier_name": "AluForge",
+  "unit_cost": 18.50,
+  "total_cost": 5550.00,
+  "supplier_id": 7,
+  "supplier_name": "Apex CNC Works",
   "triggered_by": "Core-Guard",
   "expedite": true,
-  "criticality": "CRITICAL"
+  "criticality": "HIGH"
 }
 ```
 
@@ -293,9 +293,9 @@ Hard-coded specs (in production, would come from Pinecone vector DB):
 
 | Part   | Check 1                          | Check 2                           |
 |--------|----------------------------------|-----------------------------------|
-| CH-101 | Hardness: 8.0–10.0              | Dimension tolerance: +/-0.05mm    |
-| SW-303 | Resistance: 4.5–5.5 ohm         | Cycle life: min 10,000            |
-| LNS-505| Clarity: min 95%                 | Focal tolerance: +/-0.1mm         |
+| CH-231 | Hardness: 8.0–10.0              | Dimension tolerance: +/-0.05mm    |
+| SW-232 | Resistance: 4.5–5.5 ohm         | Cycle life: min 10,000            |
+| LNS-221| Clarity: min 95%                 | Focal tolerance: +/-0.1mm         |
 
 ### Function
 
@@ -343,7 +343,7 @@ Every agent emits logs in this standard format:
 {
   "timestamp": "2026-02-21T12:00:00+00:00",
   "agent": "Core-Guard",
-  "message": "SHORTAGE: CH-101 short by 200 units.",
+  "message": "SHORTAGE: CH-231 short by 200 units.",
   "type": "warning"
 }
 ```

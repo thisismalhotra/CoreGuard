@@ -190,7 +190,7 @@ class Part(Base):
     __tablename__ = "parts"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    part_id = Column(String(20), nullable=False, unique=True)  # e.g., CH-101
+    part_id = Column(String(20), nullable=False, unique=True)  # e.g., CH-231
     description = Column(String(200), nullable=False)
     category = Column(SAEnum(PartCategory), nullable=False)
     unit_cost = Column(Float, nullable=False, default=0.0)

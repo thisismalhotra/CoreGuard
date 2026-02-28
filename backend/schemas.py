@@ -59,8 +59,8 @@ class PurchaseOrderResponse(BaseModel):
 
 class CreatePurchaseOrderRequest(BaseModel):
     """Request body for manually creating a purchase order."""
-    part_id: str = Field(description="The part_id string (e.g., 'CH-101')")
-    supplier_name: str = Field(description="Name of the supplier (e.g., 'AluForge')")
+    part_id: str = Field(description="The part_id string (e.g., 'CH-231')")
+    supplier_name: str = Field(description="Name of the supplier (e.g., 'Apex CNC Works')")
     quantity: int = Field(ge=1, description="Number of units to order")
     unit_cost: float = Field(ge=0.0, description="Cost per unit")
 

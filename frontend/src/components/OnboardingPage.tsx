@@ -67,18 +67,18 @@ const SCENARIOS = [
   },
   {
     id: "shock",
-    label: "Supplier Fire (AluForge)",
+    label: "Supplier Fire (CREE Inc.)",
     icon: Flame,
     color: "text-red-400",
-    description: "AluForge goes offline — primary CH-101 supplier is unavailable.",
+    description: "CREE Inc. goes offline — primary LED supplier is unavailable.",
     observe: "Watch Core-Guard select an alternate supplier. See Dispatcher re-score priorities with elevated lead time.",
   },
   {
     id: "quality",
-    label: "Quality Fail (CH-101)",
+    label: "Quality Fail (CH-231)",
     icon: XCircle,
     color: "text-orange-400",
-    description: "Eagle-Eye detects spec violations in an incoming CH-101 batch.",
+    description: "Eagle-Eye detects spec violations in an incoming CH-231 Body Tube batch.",
     observe: "Batch is quarantined in Digital Dock. Core-Guard fires an emergency reorder. Check the Quality Inspections tab.",
   },
   {
@@ -86,7 +86,7 @@ const SCENARIOS = [
     label: "Cascade Failure",
     icon: Layers,
     color: "text-purple-400",
-    description: "500% demand spike hits while AluForge is simultaneously offline.",
+    description: "500% demand spike hits while CREE Inc. is simultaneously offline.",
     observe: "Highest-stress scenario — watch all 5 agents fire in sequence under compounding pressure.",
   },
   {
@@ -108,9 +108,9 @@ const SCENARIOS = [
 ];
 
 const LOG_TYPES = [
-  { type: "info", color: "text-blue-400", example: "MRP calculation started for CH-101" },
+  { type: "info", color: "text-blue-400", example: "MRP calculation started for CH-231" },
   { type: "warning", color: "text-yellow-400", example: "Inventory below safety stock threshold" },
-  { type: "success", color: "text-green-400", example: "PO-2024-001 issued to AluForge" },
+  { type: "success", color: "text-green-400", example: "PO-2026-001 issued to Apex CNC Works" },
   { type: "error", color: "text-red-400", example: "All suppliers offline — escalating to COO" },
 ];
 
