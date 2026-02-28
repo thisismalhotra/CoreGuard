@@ -187,7 +187,7 @@ export function AnalyticsCharts() {
                   <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
                   <XAxis type="number" tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 12 }} />
                   <YAxis dataKey="name" type="category" tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 11 }} width={75} />
-                  <Tooltip contentStyle={TOOLTIP_STYLE} formatter={(value: number) => `$${value.toLocaleString()}`} />
+                  <Tooltip contentStyle={TOOLTIP_STYLE} formatter={(value) => `$${Number(value).toLocaleString()}`} />
                   <Bar dataKey="Spend" fill="#f59e0b" radius={[0, 4, 4, 0]} />
                 </BarChart>
               </ResponsiveContainer>
