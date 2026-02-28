@@ -157,4 +157,18 @@
   body {
     @apply bg-background text-foreground;
   }
+
+  *,
+  *::before,
+  *::after {
+    transition-property: background-color, border-color, color;
+    transition-duration: 200ms;
+    transition-timing-function: ease;
+  }
+
+  canvas,
+  svg,
+  [data-radix-popper-content-wrapper] {
+    transition: none !important;
+  }
 }
