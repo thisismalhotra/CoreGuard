@@ -20,10 +20,50 @@ class Base(DeclarativeBase):
 
 # --- Enums ---
 
+class SupplierTier(str, enum.Enum):
+    TIER_1 = "TIER_1"    # Direct/Strategic (CREE, Samsung SDI)
+    TIER_2 = "TIER_2"    # Specialty Component (PCB fabs, CNC shops)
+    TIER_3 = "TIER_3"    # Commodity/Consumable (fasteners, packaging)
+    SERVICE = "SERVICE"  # Outsourced Process (anodizing, firmware)
+
+
+class SupplierRegion(str, enum.Enum):
+    US = "US"
+    CHINA = "CHINA"
+    TAIWAN = "TAIWAN"
+    SOUTH_KOREA = "SOUTH_KOREA"
+    GERMANY = "GERMANY"
+    MEXICO = "MEXICO"
+
+
+class ContractType(str, enum.Enum):
+    BLANKET_PO = "BLANKET_PO"        # Volume commitment at negotiated price
+    SPOT_BUY = "SPOT_BUY"            # One-off purchase at market rate
+    CONSIGNMENT = "CONSIGNMENT"      # Vendor-managed inventory, pay on pull
+    FRAMEWORK = "FRAMEWORK"          # Tiered pricing by quarterly volume
+
+
+class ContractStatus(str, enum.Enum):
+    ACTIVE = "ACTIVE"
+    EXPIRING = "EXPIRING"    # Within 60 days of end_date
+    EXPIRED = "EXPIRED"
+    CANCELLED = "CANCELLED"
+
+
+class ReleaseStatus(str, enum.Enum):
+    SCHEDULED = "SCHEDULED"
+    IN_TRANSIT = "IN_TRANSIT"
+    DELIVERED = "DELIVERED"
+    LATE = "LATE"
+
+
 class PartCategory(str, enum.Enum):
     FINISHED_GOOD = "Finished Good"
+    SUB_ASSEMBLY = "Sub-Assembly"    # Intermediate assemblies (SA-LED-100, SA-PWR-110)
     COMMON_CORE = "Common Core"
+    COMPONENT = "Component"          # Leaf-level purchased parts (LED-201, PCB-202)
     ACCESSORY = "Accessory"
+    SERVICE = "Service"              # Outsourced processes (anodizing, firmware flash)
 
 
 class OrderStatus(str, enum.Enum):
@@ -51,11 +91,92 @@ class Supplier(Base):
     lead_time_days = Column(Integer, nullable=False, default=7)
     reliability_score = Column(Float, default=0.95)  # 0.0 - 1.0
     is_active = Column(Boolean, default=True)  # Simulates supplier going offline (Supply Shock)
+    tier = Column(SAEnum(SupplierTier), nullable=False, default=SupplierTier.TIER_2)
+    region = Column(SAEnum(SupplierRegion), nullable=False, default=SupplierRegion.US)
+    expedite_lead_time_days = Column(Integer, nullable=True)  # Faster option at premium
+    minimum_order_qty = Column(Integer, nullable=False, default=1)  # MOQ
+    capacity_per_month = Column(Integer, nullable=True)  # Production capacity ceiling
+    payment_terms = Column(String(50), default="Net 30")
+    certifications = Column(Text, default="[]")  # JSON array: ["ISO 9001", "ITAR", "RoHS"]
+    risk_factors = Column(Text, default="[]")    # JSON array: ["single source", "geopolitical"]
 
     parts = relationship("Part", back_populates="supplier")
 
     def __repr__(self) -> str:
         return f"<Supplier {self.name}>"
+
+
+class SupplierContract(Base):
+    """Tracks blanket POs, framework agreements, and consignment arrangements."""
+    __tablename__ = "supplier_contracts"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    contract_number = Column(String(50), nullable=False, unique=True)
+    supplier_id = Column(Integer, ForeignKey("suppliers.id"), nullable=False)
+    contract_type = Column(SAEnum(ContractType), nullable=False)
+    start_date = Column(DateTime, nullable=False)
+    end_date = Column(DateTime, nullable=False)
+    total_committed_value = Column(Float, nullable=True)   # Dollar amount commitment
+    total_committed_qty = Column(Integer, nullable=True)    # Quantity commitment
+    released_value = Column(Float, nullable=False, default=0.0)
+    released_qty = Column(Integer, nullable=False, default=0)
+    price_schedule = Column(Text, default="[]")  # JSON: [{"part_id": "LED-201", "unit_price": 11.50}]
+    payment_terms = Column(String(50), default="Net 30")
+    penalty_clause = Column(Text, default="")
+    status = Column(SAEnum(ContractStatus), nullable=False, default=ContractStatus.ACTIVE)
+
+    supplier = relationship("Supplier")
+
+    @property
+    def remaining_value(self) -> float:
+        return (self.total_committed_value or 0) - self.released_value
+
+    @property
+    def remaining_qty(self) -> int:
+        return (self.total_committed_qty or 0) - self.released_qty
+
+    def __repr__(self) -> str:
+        return f"<Contract {self.contract_number}: {self.contract_type.value} [{self.status.value}]>"
+
+
+class ScheduledRelease(Base):
+    """Call-offs against a blanket PO or framework agreement."""
+    __tablename__ = "scheduled_releases"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    release_number = Column(String(50), nullable=False, unique=True)
+    contract_id = Column(Integer, ForeignKey("supplier_contracts.id"), nullable=False)
+    part_id = Column(Integer, ForeignKey("parts.id"), nullable=False)
+    quantity = Column(Integer, nullable=False)
+    requested_delivery_date = Column(DateTime, nullable=False)
+    actual_delivery_date = Column(DateTime, nullable=True)
+    status = Column(SAEnum(ReleaseStatus), nullable=False, default=ReleaseStatus.SCHEDULED)
+
+    contract = relationship("SupplierContract")
+    part = relationship("Part")
+
+    def __repr__(self) -> str:
+        return f"<Release {self.release_number}: {self.quantity}x [{self.status.value}]>"
+
+
+class AlternateSupplier(Base):
+    """Maps primary → alternate supplier pairs with cost/lead-time deltas."""
+    __tablename__ = "alternate_suppliers"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    part_id = Column(Integer, ForeignKey("parts.id"), nullable=False)
+    primary_supplier_id = Column(Integer, ForeignKey("suppliers.id"), nullable=False)
+    alternate_supplier_id = Column(Integer, ForeignKey("suppliers.id"), nullable=False)
+    cost_premium_pct = Column(Float, nullable=False, default=0.0)  # e.g., 22.0 means +22%
+    lead_time_delta_days = Column(Integer, nullable=False, default=0)  # Positive = slower
+    notes = Column(Text, default="")
+
+    part = relationship("Part")
+    primary_supplier = relationship("Supplier", foreign_keys=[primary_supplier_id])
+    alternate_supplier = relationship("Supplier", foreign_keys=[alternate_supplier_id])
+
+    def __repr__(self) -> str:
+        return f"<AltSupplier {self.part_id}: +{self.cost_premium_pct}% cost>"
 
 
 class CriticalityLevel(str, enum.Enum):
@@ -159,6 +280,10 @@ class DemandForecast(Base):
     actual_qty = Column(Integer, nullable=False, default=0)  # Injected by simulation
     period = Column(String(20), default=lambda: f"{datetime.now(timezone.utc).year}-Q{(datetime.now(timezone.utc).month - 1) // 3 + 1}")
     updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    forecast_accuracy_pct = Column(Float, nullable=True)  # 0.0 - 1.0, computed from historical
+    source = Column(String(30), default="HISTORICAL_AVG")  # HISTORICAL_AVG | SALES_PIPELINE | SEASONAL_ADJUSTMENT | MANUAL_OVERRIDE
+    confidence_level = Column(String(10), default="MEDIUM")  # HIGH | MEDIUM | LOW
+    notes = Column(Text, default="")
 
     part = relationship("Part")
 
