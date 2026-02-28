@@ -7,7 +7,7 @@ import {
   Flame, TrendingUp, XCircle, CheckCircle, AlertCircle,
   Layers, DollarSign, WifiOff, RefreshCw, Zap,
   Activity, Ghost, GitMerge,
-  FileText, Globe, Box, Shield, Cpu, Sun,
+  FileText, Globe, Box, Shield, Cpu, Sun, Clock,
 } from "lucide-react";
 import { api } from "@/lib/api";
 
@@ -161,6 +161,33 @@ export function GodMode({
       icon: Sun,
       color: "bg-orange-500 hover:bg-orange-400",
       action: () => api.simulateSeasonalRamp(),
+    },
+  ];
+
+  const demandHorizonScenarios: Scenario[] = [
+    {
+      id: "demand-horizon-z1",
+      label: "Zone 1: Fuzzy Forecast",
+      description: "Demand for CH-101 is 200+ days out. Aura monitors only — no PO generated. Cash preserved for nearer-term needs.",
+      icon: Clock,
+      color: "bg-blue-600 hover:bg-blue-500",
+      action: () => api.simulateDemandHorizon("CH-101", 500, 200),
+    },
+    {
+      id: "demand-horizon-z2",
+      label: "Zone 2: Lead Time Horizon",
+      description: "Demand for CH-101 in 90 days. Core-Guard explodes BOM, Ghost-Writer drafts standard PO to primary supplier.",
+      icon: Clock,
+      color: "bg-violet-600 hover:bg-violet-500",
+      action: () => api.simulateDemandHorizon("CH-101", 500, 90),
+    },
+    {
+      id: "demand-horizon-z3",
+      label: "Zone 3: Drop-In Crisis",
+      description: "Demand for CH-101 in 10 days — inside supplier lead time! Part Agent defends stock, Ghost-Writer pivots to secondary supplier.",
+      icon: Clock,
+      color: "bg-red-600 hover:bg-red-500",
+      action: () => api.simulateDemandHorizon("CH-101", 500, 10),
     },
   ];
 
@@ -321,6 +348,59 @@ export function GodMode({
         </p>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {supplyChainScenarios.map((scenario) => {
+            const Icon = scenario.icon;
+            const result = results[scenario.id];
+            const isRunning = result?.status === "running";
+
+            return (
+              <Card key={scenario.id} className="bg-card border-border flex flex-col">
+                <CardHeader className="pb-2">
+                  <CardTitle className="flex items-center gap-2 text-sm font-semibold text-foreground">
+                    <Icon className="h-4 w-4 shrink-0" />
+                    {scenario.label}
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="flex flex-col flex-1 justify-between">
+                  <p className="text-xs text-muted-foreground mb-4 leading-relaxed">{scenario.description}</p>
+
+                  {result?.status === "success" && (
+                    <div className="flex items-center gap-1.5 mb-2">
+                      <CheckCircle className="h-3.5 w-3.5 text-green-400 shrink-0" />
+                      <span className="text-xs text-green-400">{result.message}</span>
+                    </div>
+                  )}
+                  {result?.status === "error" && (
+                    <div className="flex items-center gap-1.5 mb-2">
+                      <AlertCircle className="h-3.5 w-3.5 text-red-400 shrink-0" />
+                      <span className="text-xs text-red-400">{result.message}</span>
+                    </div>
+                  )}
+
+                  <Button
+                    className={`w-full ${scenario.color} text-white text-xs`}
+                    onClick={() => handleRun(scenario)}
+                    disabled={isAnyRunning || resetting}
+                  >
+                    {isRunning ? "Running..." : "Inject Chaos"}
+                  </Button>
+                </CardContent>
+              </Card>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Demand Horizon Zones Section */}
+      <div className="pt-4 border-t border-border">
+        <div className="flex items-center gap-2 mb-1">
+          <Clock className="h-4 w-4 text-violet-400" />
+          <h3 className="text-sm font-semibold text-foreground">Demand Horizon Zones</h3>
+        </div>
+        <p className="text-xs text-muted-foreground mb-4">
+          PRD §10 — classify demand by time horizon to determine agent response
+        </p>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {demandHorizonScenarios.map((scenario) => {
             const Icon = scenario.icon;
             const result = results[scenario.id];
             const isRunning = result?.status === "running";

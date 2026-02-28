@@ -130,6 +130,11 @@ export const api = {
       `/api/simulate/seasonal-ramp?deviation_pct=${deviationPct}`,
       { method: "POST" }
     ),
+  simulateDemandHorizon: (partId = "CH-101", demandQty = 500, daysUntilNeeded = 30) =>
+    fetchJSON<Record<string, unknown>>(
+      `/api/simulate/demand-horizon?part_id=${partId}&demand_qty=${demandQty}&days_until_needed=${daysUntilNeeded}`,
+      { method: "POST" }
+    ),
   updateOrderStatus: (poNumber: string, status: "APPROVED" | "CANCELLED") =>
     fetchJSON<PurchaseOrder>(`/api/orders/${poNumber}`, {
       method: "PATCH",

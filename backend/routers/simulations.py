@@ -25,6 +25,7 @@ from agents.core_guard import calculate_net_requirements, calculate_blast_radius
 from agents.ghost_writer import process_buy_orders
 from agents.eagle_eye import inspect_batch
 from agents.data_integrity import run_full_integrity_check
+from agents.demand_horizon import evaluate_demand_horizon
 from schemas import (
     SpikeResponse, SupplyShockResponse, QualityFailResponse,
     CascadeFailureResponse, ConstitutionBreachResponse,
@@ -32,7 +33,7 @@ from schemas import (
     MultiSkuContentionResponse,
     ContractExhaustionResponse, TariffShockResponse, MOQTrapResponse,
     MilitarySurgeResponse, SemiconductorAllocationResponse, SeasonalRampResponse,
-    ResetResponse,
+    DemandHorizonResponse, ResetResponse,
 )
 
 router = APIRouter(prefix="/api/simulate", tags=["simulations"])
@@ -2096,6 +2097,41 @@ async def simulate_seasonal_ramp(
         "pre_positioned_parts": pre_positioned_parts,
         "procurement": ghost_result_final["purchase_orders"],
         "logs": all_logs,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Scenario 16: Demand Horizon Zone Classification (PRD §10)
+# ---------------------------------------------------------------------------
+
+@router.post("/demand-horizon", response_model=DemandHorizonResponse)
+async def simulate_demand_horizon(
+    part_id: str = Query(default="CH-101", description="Part to evaluate"),
+    demand_qty: int = Query(default=500, description="Quantity demanded"),
+    days_until_needed: int = Query(default=30, description="Days until demand must be fulfilled"),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """
+    PRD §10: Classify a demand signal into one of three horizon zones
+    and determine the appropriate agent response.
+
+    Zone 1 (6+ months): Aura advisory only, no PO.
+    Zone 2 (2-5 months): Core-Guard + Ghost-Writer, standard PO.
+    Zone 3 (<60 days): Part-Agent + Core-Guard, expedited PO, secondary supplier.
+    """
+    part = db.query(Part).filter(Part.part_id == part_id).first()
+    if not part:
+        raise HTTPException(status_code=404, detail=f"Part '{part_id}' not found")
+
+    result = evaluate_demand_horizon(db, part_id, demand_qty, days_until_needed)
+    db.commit()
+
+    await emit_logs(result["logs"])
+
+    return {
+        "status": "simulation_complete",
+        **{k: v for k, v in result.items() if k != "logs"},
+        "logs": result["logs"],
     }
 
 

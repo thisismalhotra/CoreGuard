@@ -331,6 +331,24 @@ class SeasonalRampResponse(BaseModel):
     logs: list[GlassBoxLog]
 
 
+class DemandHorizonResponse(BaseModel):
+    """Response for Demand Horizon zone classification (PRD §10)."""
+    status: str
+    scenario: str = "DEMAND_HORIZON"
+    part_id: str
+    demand_qty: int
+    days_until_needed: int
+    zone: int
+    zone_name: str
+    active_agents: list[str]
+    recommended_action: str
+    generate_po: bool
+    expedite: bool
+    use_secondary_supplier: bool
+    secondary_supplier: Optional[dict[str, Any]] = None
+    logs: list[GlassBoxLog]
+
+
 class ResetResponse(BaseModel):
     status: str
     message: str
