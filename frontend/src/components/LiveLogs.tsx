@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Trash2, Clock, Terminal, Zap } from "lucide-react";
+import { Trash2, Clock, Terminal, Zap, Search, X } from "lucide-react";
 import type { AgentLog } from "@/lib/socket";
 import { api } from "@/lib/api";
 
@@ -42,6 +42,25 @@ export function LiveLogs({
   const containerRef = useRef<HTMLDivElement>(null);
   const [delay, setDelay] = useState(2);
   const [isNearBottom, setIsNearBottom] = useState(true);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [agentFilter, setAgentFilter] = useState<string[]>([]);
+  const [typeFilter, setTypeFilter] = useState<string[]>([]);
+
+  const filteredLogs = useMemo(() => {
+    return logs.filter((log) => {
+      if (searchQuery && !log.message.toLowerCase().includes(searchQuery.toLowerCase()) &&
+          !log.agent.toLowerCase().includes(searchQuery.toLowerCase())) {
+        return false;
+      }
+      if (agentFilter.length > 0 && !agentFilter.includes(log.agent)) {
+        return false;
+      }
+      if (typeFilter.length > 0 && !typeFilter.includes(log.type)) {
+        return false;
+      }
+      return true;
+    });
+  }, [logs, searchQuery, agentFilter, typeFilter]);
 
   // Fetch current delay from backend on mount
   useEffect(() => {
@@ -66,7 +85,7 @@ export function LiveLogs({
     if (isNearBottom) {
       bottomRef.current?.scrollIntoView({ behavior: "smooth" });
     }
-  }, [logs, isNearBottom]);
+  }, [filteredLogs, isNearBottom]);
 
   const handleDelayChange = async (newDelay: number) => {
     const prevDelay = delay;
@@ -81,10 +100,97 @@ export function LiveLogs({
 
   return (
     <div className="space-y-2">
+      {/* Filter bar */}
+      <div className="flex items-center gap-2 flex-wrap">
+        <div className="relative flex-1">
+          <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3 w-3 text-muted-foreground" />
+          <input
+            type="text"
+            placeholder="Search logs..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="w-full bg-card border border-input text-foreground text-xs rounded pl-7 pr-7 py-1.5 h-7 focus:outline-none focus:border-blue-500 placeholder:text-muted-foreground/50"
+          />
+          {searchQuery && (
+            <button
+              onClick={() => setSearchQuery("")}
+              className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+            >
+              <X className="h-3 w-3" />
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Agent filters */}
+      <div className="flex items-center gap-1 flex-wrap">
+        <span className="text-[10px] text-muted-foreground mr-1">Agent:</span>
+        {Object.keys(AGENT_COLORS).map((agent) => (
+          <button
+            key={agent}
+            onClick={() =>
+              setAgentFilter((prev) =>
+                prev.includes(agent)
+                  ? prev.filter((a) => a !== agent)
+                  : [...prev, agent]
+              )
+            }
+            className={`text-[10px] px-1.5 py-0.5 rounded border transition-colors ${
+              agentFilter.includes(agent)
+                ? `${AGENT_COLORS[agent]} text-white border-transparent`
+                : "bg-card text-muted-foreground border-input hover:border-foreground/30"
+            }`}
+          >
+            {agent}
+          </button>
+        ))}
+      </div>
+
+      {/* Type filters */}
+      <div className="flex items-center gap-1 flex-wrap">
+        <span className="text-[10px] text-muted-foreground mr-1">Type:</span>
+        {Object.keys(LOG_TYPE_STYLES).map((type) => (
+          <button
+            key={type}
+            onClick={() =>
+              setTypeFilter((prev) =>
+                prev.includes(type)
+                  ? prev.filter((t) => t !== type)
+                  : [...prev, type]
+              )
+            }
+            className={`text-[10px] px-1.5 py-0.5 rounded border capitalize transition-colors ${
+              typeFilter.includes(type)
+                ? "bg-foreground text-background border-transparent"
+                : "bg-card text-muted-foreground border-input hover:border-foreground/30"
+            }`}
+          >
+            {type}
+          </button>
+        ))}
+        {(searchQuery || agentFilter.length > 0 || typeFilter.length > 0) && (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="text-xs h-6 px-2 text-muted-foreground"
+            onClick={() => {
+              setSearchQuery("");
+              setAgentFilter([]);
+              setTypeFilter([]);
+            }}
+          >
+            <X className="h-3 w-3 mr-1" />
+            Clear Filters
+          </Button>
+        )}
+      </div>
+
       {/* Toolbar */}
       <div className="flex items-center justify-between">
         <span className="text-xs text-muted-foreground">
-          {logs.length} {logs.length === 1 ? "entry" : "entries"}
+          {searchQuery || agentFilter.length > 0 || typeFilter.length > 0
+            ? `${filteredLogs.length} of ${logs.length} entries`
+            : `${logs.length} ${logs.length === 1 ? "entry" : "entries"}`}
         </span>
         <div className="flex items-center gap-3">
           {/* Log delay selector */}
@@ -140,7 +246,7 @@ export function LiveLogs({
             )}
           </div>
         )}
-        {logs.map((log, i) => {
+        {filteredLogs.map((log, i) => {
           const time = log.timestamp
             ? new Date(log.timestamp).toLocaleTimeString()
             : "--:--:--";
