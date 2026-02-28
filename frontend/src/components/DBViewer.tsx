@@ -87,6 +87,17 @@ function contractTypeColor(type: string): string {
 }
 
 function DataTable({ rows }: { rows: Record<string, unknown>[] }) {
+  const [currentPage, setCurrentPage] = useState(1);
+  const rowsPerPage = 25;
+  const totalPages = Math.ceil(rows.length / rowsPerPage);
+  const paginatedRows = rows.slice(
+    (currentPage - 1) * rowsPerPage,
+    currentPage * rowsPerPage
+  );
+
+  // Reset page when data changes
+  useEffect(() => setCurrentPage(1), [rows]);
+
   if (rows.length === 0) {
     return (
       <div className="text-center py-12 text-muted-foreground">
@@ -113,7 +124,7 @@ function DataTable({ rows }: { rows: Record<string, unknown>[] }) {
           </tr>
         </thead>
         <tbody>
-          {rows.map((row, i) => (
+          {paginatedRows.map((row, i) => (
             <tr
               key={i}
               className="border-b border-border/50 hover:bg-muted/30 transition-colors"
@@ -208,6 +219,33 @@ function DataTable({ rows }: { rows: Record<string, unknown>[] }) {
           ))}
         </tbody>
       </table>
+      {totalPages > 1 && (
+        <div className="flex items-center justify-between px-2 py-2 border-t border-border">
+          <span className="text-xs text-muted-foreground">
+            {rows.length} rows — Page {currentPage} of {totalPages}
+          </span>
+          <div className="flex items-center gap-1">
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-7 text-xs"
+              disabled={currentPage === 1}
+              onClick={() => setCurrentPage((p) => p - 1)}
+            >
+              Previous
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-7 text-xs"
+              disabled={currentPage === totalPages}
+              onClick={() => setCurrentPage((p) => p + 1)}
+            >
+              Next
+            </Button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
