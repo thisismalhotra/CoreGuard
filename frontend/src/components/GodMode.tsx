@@ -10,6 +10,7 @@ import {
   FileText, Globe, Box, Shield, Cpu, Sun, Clock,
   ChevronDown, ChevronUp, Loader2,
 } from "lucide-react";
+import { toast } from "sonner";
 import { api } from "@/lib/api";
 
 type ScenarioResult = {
@@ -209,10 +210,12 @@ export function GodMode({
       await scenario.action();
       setResults((prev) => ({ ...prev, [scenario.id]: { status: "success", message: "Complete" } }));
       onSimulationComplete();
+      toast.success("Scenario completed successfully");
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Unknown error";
       setResults((prev) => ({ ...prev, [scenario.id]: { status: "error", message: msg } }));
       console.error("Simulation failed:", err);
+      toast.error("Scenario failed: " + msg);
     }
   };
 

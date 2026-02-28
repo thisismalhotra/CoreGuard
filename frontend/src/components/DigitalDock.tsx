@@ -16,6 +16,7 @@ import {
   ChevronDown,
   ChevronUp,
 } from "lucide-react";
+import { toast } from "sonner";
 import { api, type PurchaseOrder, type QualityInspection } from "@/lib/api";
 
 // --- Status badge helpers ---
@@ -85,6 +86,7 @@ export function DigitalDock() {
     try {
       await api.updateOrderStatus(poNumber, status);
       await fetchData();
+      toast.success(`PO ${poNumber} ${status === "APPROVED" ? "approved" : "rejected"}`);
     } catch (err) {
       setPOError(
         `Failed to ${status === "APPROVED" ? "approve" : "reject"} ${poNumber}: ${err instanceof Error ? err.message : "Unknown error"}`

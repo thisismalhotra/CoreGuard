@@ -5,6 +5,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Activity, Terminal, Shield, Zap, Database, Bot, AlertTriangle, HelpCircle, BarChart3 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
+import { toast } from "sonner";
 import { getSocket, type AgentLog } from "@/lib/socket";
 import { api, type InventoryItem, type KPIs } from "@/lib/api";
 import { KPIPanel } from "./KPIPanel";
@@ -65,8 +66,17 @@ export function CommandCenter() {
     const socket = getSocket();
     socket.connect();
 
-    socket.on("connect", () => setConnected(true));
-    socket.on("disconnect", () => setConnected(false));
+    socket.on("connect", () => {
+      setConnected((prev) => {
+        // Only toast on reconnection (prev was true then disconnected, now reconnecting)
+        if (prev === false) toast.success("Connected to server");
+        return true;
+      });
+    });
+    socket.on("disconnect", () => {
+      setConnected(false);
+      toast.error("Disconnected from server");
+    });
 
     socket.on("agent_log", (log: AgentLog) => {
       // Cap at 1000 entries to prevent unbounded memory growth
