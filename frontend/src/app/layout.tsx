@@ -28,8 +28,16 @@ export default function RootLayout({
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
+        <a
+          href="#main-content"
+          className="sr-only focus:not-sr-only focus:absolute focus:z-50 focus:bg-card focus:text-foreground focus:p-3 focus:rounded focus:border focus:border-border"
+        >
+          Skip to main content
+        </a>
         <ThemeProvider>
-          {children}
+          <main id="main-content">
+            {children}
+          </main>
         </ThemeProvider>
       </body>
     </html>

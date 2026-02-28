@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import {
   Shield,
   Zap,
@@ -134,11 +134,37 @@ function shouldShowOnboarding() {
 export function OnboardingModal() {
   const [visible, setVisible] = useState(shouldShowOnboarding);
   const [slide, setSlide] = useState(0);
+  const modalRef = useRef<HTMLDivElement>(null);
 
   const dismiss = () => {
     localStorage.setItem(STORAGE_KEY, "true");
     setVisible(false);
   };
+
+  useEffect(() => {
+    if (!visible) return;
+    const modal = modalRef.current;
+    if (!modal) return;
+
+    const focusableElements = modal.querySelectorAll(
+      'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+    );
+    const first = focusableElements[0] as HTMLElement;
+    const last = focusableElements[focusableElements.length - 1] as HTMLElement;
+
+    const handleTab = (e: KeyboardEvent) => {
+      if (e.key !== "Tab") return;
+      if (e.shiftKey) {
+        if (document.activeElement === first) { e.preventDefault(); last?.focus(); }
+      } else {
+        if (document.activeElement === last) { e.preventDefault(); first?.focus(); }
+      }
+    };
+
+    document.addEventListener("keydown", handleTab);
+    first?.focus();
+    return () => document.removeEventListener("keydown", handleTab);
+  }, [visible]);
 
   if (!visible) return null;
 
@@ -151,7 +177,7 @@ export function OnboardingModal() {
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
       // Intentionally not closeable by clicking backdrop — first-visit modal requires explicit action
     >
-      <div className="bg-background border border-border rounded-2xl shadow-2xl w-full max-w-md flex flex-col">
+      <div ref={modalRef} className="bg-background border border-border rounded-2xl shadow-2xl w-full max-w-md flex flex-col">
         {/* Skip button */}
         <div className="flex justify-end px-5 pt-4">
           <button
