@@ -73,6 +73,8 @@ export function DigitalDock() {
   const [updatingPO, setUpdatingPO] = useState<string | null>(null);
   const [poError, setPOError] = useState<string | null>(null);
   const [fetchError, setFetchError] = useState<string | null>(null);
+  const [inspPage, setInspPage] = useState(1);
+  const inspPerPage = 25;
 
   const handleUpdateStatus = async (
     poNumber: string,
@@ -115,6 +117,8 @@ export function DigitalDock() {
     fetchData();
   }, [fetchData]);
 
+  useEffect(() => setInspPage(1), [inspections]);
+
   const togglePO = (poNumber: string) => {
     setExpandedPO((prev) => {
       const next = new Set(prev);
@@ -123,6 +127,13 @@ export function DigitalDock() {
       return next;
     });
   };
+
+  // Inspection pagination
+  const totalInspPages = Math.ceil(inspections.length / inspPerPage);
+  const paginatedInspections = inspections.slice(
+    (inspPage - 1) * inspPerPage,
+    inspPage * inspPerPage
+  );
 
   // Summary stats
   const passCount = inspections.filter((i) => i.result === "PASS").length;
@@ -282,7 +293,7 @@ export function DigitalDock() {
                   </tr>
                 </thead>
                 <tbody>
-                  {inspections.map((insp) => (
+                  {paginatedInspections.map((insp) => (
                     <tr
                       key={insp.id}
                       className="border-b border-border/50 hover:bg-muted/30 transition-colors"
@@ -315,6 +326,33 @@ export function DigitalDock() {
                   ))}
                 </tbody>
               </table>
+              {totalInspPages > 1 && (
+                <div className="flex items-center justify-between px-2 py-2 border-t border-border mt-2">
+                  <span className="text-xs text-muted-foreground">
+                    {inspections.length} inspections — Page {inspPage} of {totalInspPages}
+                  </span>
+                  <div className="flex items-center gap-1">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-7 text-xs"
+                      disabled={inspPage === 1}
+                      onClick={() => setInspPage((p) => p - 1)}
+                    >
+                      Previous
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-7 text-xs"
+                      disabled={inspPage === totalInspPages}
+                      onClick={() => setInspPage((p) => p + 1)}
+                    >
+                      Next
+                    </Button>
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </div>
