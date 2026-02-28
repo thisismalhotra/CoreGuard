@@ -24,6 +24,10 @@ export function CommandCenter() {
   const [connected, setConnected] = useState(false);
   const [backendError, setBackendError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState("logs");
+  const [integrityWarnings, setIntegrityWarnings] = useState<Array<{
+    part_id: string; description: string; severity: string;
+    issue: string; detail: string; action: string;
+  }>>([]);
 
   const refreshData = useCallback(async () => {
     try {
@@ -35,6 +39,7 @@ export function CommandCenter() {
       setBackendError(null);
       setInventory(inv);
       setKPIs(kpiData);
+      api.getDataIntegrityWarnings().then(setIntegrityWarnings).catch(() => {});
       // Merge persisted logs with live ones (deduplicate via timestamp+agent+message composite key)
       setLogs((prev) => {
         const existingKeys = new Set(
@@ -179,6 +184,30 @@ export function CommandCenter() {
         </TabsList>
 
         <TabsContent value="status" className="mt-4">
+          {integrityWarnings.length > 0 && (
+            <div className="space-y-2 mb-4">
+              {integrityWarnings.map((w, i) => (
+                <div
+                  key={`${w.part_id}-${w.issue}-${i}`}
+                  className={`flex items-start gap-3 p-3 rounded-lg border text-xs ${
+                    w.severity === "critical"
+                      ? "bg-red-950/30 border-red-700/50 text-red-300"
+                      : "bg-yellow-950/30 border-yellow-700/50 text-yellow-300"
+                  }`}
+                >
+                  <AlertTriangle className={`h-4 w-4 shrink-0 mt-0.5 ${
+                    w.severity === "critical" ? "text-red-500" : "text-yellow-500"
+                  }`} />
+                  <div>
+                    <span className="font-semibold">{w.part_id}</span>
+                    <span className="text-muted-foreground ml-1">— {w.issue}</span>
+                    <p className="text-muted-foreground mt-0.5">{w.detail}</p>
+                    <p className="mt-1 italic">{w.action}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
           <InventoryCards items={inventory} />
         </TabsContent>
 

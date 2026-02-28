@@ -144,6 +144,15 @@ export const api = {
   resetSimulation: () =>
     fetchJSON<Record<string, unknown>>("/api/simulate/reset", { method: "POST" }),
   getAgents: () => fetchJSON<Agent[]>("/api/agents"),
+  getDataIntegrityWarnings: () =>
+    fetchJSON<Array<{
+      part_id: string;
+      description: string;
+      severity: string;
+      issue: string;
+      detail: string;
+      action: string;
+    }>>("/api/data-integrity/warnings"),
   getDBTable: (endpoint: string) =>
     fetchJSON<Record<string, unknown>[]>(endpoint),
   getLogDelay: () =>

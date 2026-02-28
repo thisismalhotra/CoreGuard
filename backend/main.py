@@ -18,6 +18,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from database.connection import init_db
 from routers import inventory, orders, kpis, agents_meta, simulations
+from routers.data_integrity import router as data_integrity_router
 
 
 # --- Socket.io setup ---
@@ -51,6 +52,7 @@ app.include_router(orders.router)
 app.include_router(kpis.router)
 app.include_router(agents_meta.router)
 app.include_router(simulations.router)
+app.include_router(data_integrity_router)
 
 # --- Store Socket.io and settings on app.state for thread-safe access ---
 app.state.sio = sio
