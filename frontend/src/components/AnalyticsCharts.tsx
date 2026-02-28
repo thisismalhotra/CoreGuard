@@ -80,7 +80,29 @@ export function AnalyticsCharts() {
   }, []);
 
   if (loading) {
-    return <div className="text-center text-muted-foreground py-8 animate-pulse">Loading analytics...</div>;
+    const skeletonHeights = [45, 72, 58, 35, 80, 63];
+    return (
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {[...Array(4)].map((_, i) => (
+          <Card key={i} className="bg-card border-border">
+            <CardHeader className="pb-2">
+              <div className="h-4 w-32 bg-muted animate-pulse rounded" />
+            </CardHeader>
+            <CardContent>
+              <div className="h-[250px] bg-muted/50 animate-pulse rounded flex items-end gap-1 p-4">
+                {[...Array(6)].map((_, j) => (
+                  <div
+                    key={j}
+                    className="flex-1 bg-muted animate-pulse rounded-t"
+                    style={{ height: `${skeletonHeights[j]}%` }}
+                  />
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+    );
   }
 
   // --- PO Status Breakdown ---

@@ -183,7 +183,7 @@ export function CommandCenter() {
         </TabsContent>
 
         <TabsContent value="analytics" className="mt-4">
-          <InventoryCharts items={inventory} />
+          <InventoryCharts items={inventory} loading={!inventory.length && !backendError} />
           <AnalyticsCharts />
         </TabsContent>
 

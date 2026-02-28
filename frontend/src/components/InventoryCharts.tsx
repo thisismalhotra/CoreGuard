@@ -19,6 +19,7 @@ import type { InventoryItem } from "@/lib/api";
 
 type Props = {
   items: InventoryItem[];
+  loading?: boolean;
 };
 
 const COLORS = {
@@ -44,7 +45,24 @@ function healthColor(score: number): string {
   return "#ef4444";
 }
 
-export function InventoryCharts({ items }: Props) {
+export function InventoryCharts({ items, loading }: Props) {
+  if (loading) {
+    return (
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        {[...Array(3)].map((_, i) => (
+          <Card key={i} className="bg-card border-border">
+            <CardHeader className="pb-2">
+              <div className="h-4 w-28 bg-muted animate-pulse rounded" />
+            </CardHeader>
+            <CardContent>
+              <div className="h-[300px] bg-muted/50 animate-pulse rounded" />
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+    );
+  }
+
   if (items.length === 0) {
     return (
       <div className="text-center text-muted-foreground py-12">
