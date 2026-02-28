@@ -160,28 +160,30 @@ export function CommandCenter() {
 
       {/* Tabbed Content */}
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-        <TabsList className="bg-card border border-border">
-          <TabsTrigger value="status" className="data-[state=active]:bg-muted gap-1.5">
-            <Activity className="h-3.5 w-3.5" />
-            Network Status
-          </TabsTrigger>
-          <TabsTrigger value="analytics" className="data-[state=active]:bg-muted gap-1.5">
-            <BarChart3 className="h-3.5 w-3.5" />
-            Analytics
-          </TabsTrigger>
-          <TabsTrigger value="logs" className="data-[state=active]:bg-muted gap-1.5">
-            <Terminal className="h-3.5 w-3.5" />
-            Live Logs
-          </TabsTrigger>
-          <TabsTrigger value="dock" className="data-[state=active]:bg-muted gap-1.5">
-            <Shield className="h-3.5 w-3.5" />
-            Digital Dock
-          </TabsTrigger>
-          <TabsTrigger value="godmode" className="data-[state=active]:bg-muted gap-1.5">
-            <Zap className="h-3.5 w-3.5" />
-            God Mode
-          </TabsTrigger>
-        </TabsList>
+        <div className="overflow-x-auto scrollbar-hide">
+          <TabsList className="bg-card border border-border inline-flex w-max min-w-full">
+            <TabsTrigger value="status" className="data-[state=active]:bg-muted gap-1.5">
+              <Activity className="h-3.5 w-3.5" />
+              Network Status
+            </TabsTrigger>
+            <TabsTrigger value="analytics" className="data-[state=active]:bg-muted gap-1.5">
+              <BarChart3 className="h-3.5 w-3.5" />
+              Analytics
+            </TabsTrigger>
+            <TabsTrigger value="logs" className="data-[state=active]:bg-muted gap-1.5">
+              <Terminal className="h-3.5 w-3.5" />
+              Live Logs
+            </TabsTrigger>
+            <TabsTrigger value="dock" className="data-[state=active]:bg-muted gap-1.5">
+              <Shield className="h-3.5 w-3.5" />
+              Digital Dock
+            </TabsTrigger>
+            <TabsTrigger value="godmode" className="data-[state=active]:bg-muted gap-1.5">
+              <Zap className="h-3.5 w-3.5" />
+              God Mode
+            </TabsTrigger>
+          </TabsList>
+        </div>
 
         <TabsContent value="status" className="mt-4">
           {integrityWarnings.length > 0 && (
