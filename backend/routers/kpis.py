@@ -66,5 +66,5 @@ def get_log_delay_setting(request: Request) -> dict:
 def set_log_delay_setting(request: Request, delay: float = 2.0) -> dict:
     """Update the delay (in seconds) between each log line during simulations."""
     # Clamp to reasonable range and store on app.state (thread-safe for single worker)
-    request.app.state.log_delay_seconds = max(0.5, min(delay, 5.0))
+    request.app.state.log_delay_seconds = max(0.1, min(delay, 5.0))
     return {"delay": request.app.state.log_delay_seconds}

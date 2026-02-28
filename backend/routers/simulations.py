@@ -188,7 +188,7 @@ async def simulate_demand_spike(
 
 @router.post("/supply-shock", response_model=SupplyShockResponse)
 async def simulate_supply_shock(
-    supplier_name: str = "AluForge",
+    supplier_name: str = "CREE Inc.",
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     """
@@ -314,7 +314,7 @@ async def simulate_supply_shock(
 
 @router.post("/quality-fail", response_model=QualityFailResponse)
 async def simulate_quality_fail(
-    part_id: str = "CH-101",
+    part_id: str = "CH-231",
     batch_size: int = Query(default=150, ge=1, le=10000, description="Batch size (1–10,000)"),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
@@ -363,17 +363,17 @@ async def simulate_cascade_failure(
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     """
-    Scenario D: Demand spike hits while AluForge is already offline.
+    Scenario D: Demand spike hits while CREE Inc. is already offline.
     """
     all_logs: list[dict[str, str]] = []
 
-    # Act 1: Knock out AluForge silently
-    aluforge = db.query(Supplier).filter(Supplier.name == "AluForge").first()
-    if aluforge:
-        aluforge.is_active = False
+    # Act 1: Knock out a critical supplier silently
+    critical_supplier = db.query(Supplier).filter(Supplier.name == "CREE Inc.").first()
+    if critical_supplier:
+        critical_supplier.is_active = False
         db.flush()
 
-    log = _sys_log(db, "CASCADE EVENT INITIATED: AluForge goes offline at the same moment a 500% demand spike hits FL-001-T.", "error")
+    log = _sys_log(db, "CASCADE EVENT INITIATED: CREE Inc. goes offline at the same moment a 500% demand spike hits FL-001-T.", "error")
     all_logs.append(log)
     await emit_logs([log])
 
@@ -549,7 +549,7 @@ async def simulate_full_blackout(
     """
     all_logs: list[dict[str, str]] = []
 
-    log = _sys_log(db, "FULL BLACKOUT INITIATED: Simulating catastrophic multi-supplier failure for CH-101.", "error")
+    log = _sys_log(db, "FULL BLACKOUT INITIATED: Simulating catastrophic multi-supplier failure.", "error")
     all_logs.append(log)
     await emit_logs([log])
 
@@ -643,7 +643,7 @@ async def simulate_full_blackout(
 
 @router.post("/slow-bleed", response_model=SlowBleedResponse)
 async def simulate_slow_bleed(
-    part_id: str = Query(default="CH-101", description="Part ID to simulate slow bleed on"),
+    part_id: str = Query(default="CH-231", description="Part ID to simulate slow bleed on"),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     """
@@ -819,7 +819,7 @@ async def simulate_inventory_decay(
 
     log = _sys_log(
         db,
-        "INVENTORY DECAY INITIATED: Checking FL-001-T components for ghost and suspect inventory.",
+        "INVENTORY DECAY INITIATED: Checking FL-001-T sub-assembly components for ghost and suspect inventory.",
         "warning",
     )
     all_logs.append(log)
@@ -853,33 +853,33 @@ async def simulate_inventory_decay(
     await emit_logs([log])
 
     # Save original values for restoration
-    ch101_inv = db.query(Inventory).join(Part).filter(Part.part_id == "CH-101").first()
-    lns505_inv = db.query(Inventory).join(Part).filter(Part.part_id == "LNS-505").first()
+    ch231_inv = db.query(Inventory).join(Part).filter(Part.part_id == "CH-231").first()
+    lns221_inv = db.query(Inventory).join(Part).filter(Part.part_id == "LNS-221").first()
 
-    original_ch101_consumption_date = ch101_inv.last_consumption_date if ch101_inv else None
-    original_lns505_last_updated = lns505_inv.last_updated if lns505_inv else None
+    original_ch231_consumption_date = ch231_inv.last_consumption_date if ch231_inv else None
+    original_lns221_last_updated = lns221_inv.last_updated if lns221_inv else None
 
-    # CH-101: Set last_consumption_date to 30 days ago (ghost: burn rate > 0 but no consumption)
-    if ch101_inv:
-        ch101_inv.last_consumption_date = datetime.now(timezone.utc) - timedelta(days=30)
+    # CH-231: Set last_consumption_date to 30 days ago (ghost: burn rate > 0 but no consumption)
+    if ch231_inv:
+        ch231_inv.last_consumption_date = datetime.now(timezone.utc) - timedelta(days=30)
         db.flush()
         log = _sys_log(
             db,
-            f"Decay injected: CH-101 last_consumption_date set to 30 days ago "
-            f"(ghost: burn rate {ch101_inv.daily_burn_rate}/day but no recorded consumption).",
+            f"Decay injected: CH-231 last_consumption_date set to 30 days ago "
+            f"(ghost: burn rate {ch231_inv.daily_burn_rate}/day but no recorded consumption).",
             "warning",
             agent="System",
         )
         all_logs.append(log)
         await emit_logs([log])
 
-    # LNS-505: Set last_updated to 200 days ago (suspect: no movement for 6+ months)
-    if lns505_inv:
-        lns505_inv.last_updated = datetime.now(timezone.utc) - timedelta(days=200)
+    # LNS-221: Set last_updated to 200 days ago (suspect: no movement for 6+ months)
+    if lns221_inv:
+        lns221_inv.last_updated = datetime.now(timezone.utc) - timedelta(days=200)
         db.flush()
         log = _sys_log(
             db,
-            f"Decay injected: LNS-505 last_updated set to 200 days ago "
+            f"Decay injected: LNS-221 last_updated set to 200 days ago "
             f"(suspect: no inventory movement for 6+ months).",
             "warning",
             agent="System",
@@ -981,10 +981,10 @@ async def simulate_inventory_decay(
     # ---------------------------------------------------------------
     # Restore original values
     # ---------------------------------------------------------------
-    if ch101_inv:
-        ch101_inv.last_consumption_date = original_ch101_consumption_date
-    if lns505_inv:
-        lns505_inv.last_updated = original_lns505_last_updated
+    if ch231_inv:
+        ch231_inv.last_consumption_date = original_ch231_consumption_date
+    if lns221_inv:
+        lns221_inv.last_updated = original_lns221_last_updated
     for part_id_str, original_oh in original_on_hand_values.items():
         restored_inv = db.query(Inventory).join(Part).filter(Part.part_id == part_id_str).first()
         if restored_inv:
@@ -1028,19 +1028,19 @@ async def simulate_multi_sku_contention(
     Scenario I: Multi-SKU Contention — two products compete for shared components.
 
     FL-001-T (Tactical) demands 200 units, FL-001-S (Standard) demands 300 units.
-    CH-101 is shared: 2x per Tactical, 1x per Standard = 700 chassis needed total.
+    CH-231 is shared: 1x per Tactical, 1x per Standard = 500 chassis needed total.
 
     4-act story:
-      Act 1: Part Agent monitors CH-101 for FL-001-T demand — looks manageable.
-      Act 2: Part Agent monitors CH-101 for FL-001-S demand — still looks ok.
-      Act 3: Contention detected — combined burn rate overwhelms CH-101 runway.
+      Act 1: Part Agent monitors CH-231 for FL-001-T demand — looks manageable.
+      Act 2: Part Agent monitors CH-231 for FL-001-S demand — still looks ok.
+      Act 3: Contention detected — combined burn rate overwhelms CH-231 runway.
       Act 4: Core-Guard applies criticality-based prioritization and procures.
     """
     all_logs: list[dict[str, str]] = []
 
     tactical_demand = 200
     standard_demand = 300
-    shared_component = "CH-101"
+    shared_component = "CH-231"
 
     log = _sys_log(
         db,
@@ -1052,9 +1052,9 @@ async def simulate_multi_sku_contention(
     await emit_logs([log])
 
     # ---------------------------------------------------------------
-    # Act 1: Part Agent monitors CH-101 for FL-001-T demand
+    # Act 1: Part Agent monitors CH-231 for FL-001-T demand
     # ---------------------------------------------------------------
-    log = _sys_log(db, "Act 1: Part Agent monitoring CH-101 for FL-001-T demand (200 units × 2 per = 400 chassis)...", "info")
+    log = _sys_log(db, f"Act 1: Part Agent monitoring {shared_component} for FL-001-T demand ({tactical_demand} units × 1 per = {tactical_demand} chassis)...", "info")
     all_logs.append(log)
     await emit_logs([log])
 
@@ -1065,16 +1065,16 @@ async def simulate_multi_sku_contention(
     log = _sys_log(
         db,
         f"Act 1 complete: FL-001-T alone — {len(tactical_result['crisis_signals'])} crisis signal(s). "
-        f"CH-101 looks {'stressed' if tactical_result['crisis_signals'] else 'manageable'}.",
+        f"{shared_component} looks {'stressed' if tactical_result['crisis_signals'] else 'manageable'}.",
         "warning" if tactical_result["crisis_signals"] else "success",
     )
     all_logs.append(log)
     await emit_logs([log])
 
     # ---------------------------------------------------------------
-    # Act 2: Part Agent monitors CH-101 for FL-001-S demand
+    # Act 2: Part Agent monitors CH-231 for FL-001-S demand
     # ---------------------------------------------------------------
-    log = _sys_log(db, "Act 2: Part Agent monitoring CH-101 for FL-001-S demand (300 units × 1 per = 300 chassis)...", "info")
+    log = _sys_log(db, f"Act 2: Part Agent monitoring {shared_component} for FL-001-S demand ({standard_demand} units × 1 per = {standard_demand} chassis)...", "info")
     all_logs.append(log)
     await emit_logs([log])
 
@@ -1085,7 +1085,7 @@ async def simulate_multi_sku_contention(
     log = _sys_log(
         db,
         f"Act 2 complete: FL-001-S alone — {len(standard_result['crisis_signals'])} crisis signal(s). "
-        f"CH-101 looks {'stressed' if standard_result['crisis_signals'] else 'ok in isolation'}.",
+        f"{shared_component} looks {'stressed' if standard_result['crisis_signals'] else 'ok in isolation'}.",
         "warning" if standard_result["crisis_signals"] else "success",
     )
     all_logs.append(log)
@@ -1096,29 +1096,29 @@ async def simulate_multi_sku_contention(
     # ---------------------------------------------------------------
     log = _sys_log(
         db,
-        "Act 3: CONTENTION DETECTION — calculating combined burn rate from both SKUs on CH-101...",
+        f"Act 3: CONTENTION DETECTION — calculating combined burn rate from both SKUs on {shared_component}...",
         "warning",
     )
     all_logs.append(log)
     await emit_logs([log])
 
-    ch101_inv = db.query(Inventory).join(Part).filter(Part.part_id == shared_component).first()
-    if not ch101_inv:
+    shared_inv = db.query(Inventory).join(Part).filter(Part.part_id == shared_component).first()
+    if not shared_inv:
         raise HTTPException(status_code=404, detail=f"No inventory record for {shared_component}")
 
-    original_burn_rate = ch101_inv.daily_burn_rate
+    original_burn_rate = shared_inv.daily_burn_rate
 
-    # Combined daily burn: (200 Tactical × 2 chassis + 300 Standard × 1 chassis) / 30 days
-    combined_additional_burn = (tactical_demand * 2 + standard_demand * 1) / 30.0
+    # Combined daily burn: (200 Tactical × 1 chassis + 300 Standard × 1 chassis) / 30 days
+    combined_additional_burn = (tactical_demand * 1 + standard_demand * 1) / 30.0
     contention_burn_rate = original_burn_rate + combined_additional_burn
 
-    ch101_inv.daily_burn_rate = contention_burn_rate
+    shared_inv.daily_burn_rate = contention_burn_rate
     db.flush()
 
     log = _sys_log(
         db,
         f"Combined burn rate for {shared_component}: {original_burn_rate:.1f}/day → {contention_burn_rate:.1f}/day "
-        f"(+{combined_additional_burn:.1f} from {tactical_demand}×2 + {standard_demand}×1 = 700 chassis over 30 days).",
+        f"(+{combined_additional_burn:.1f} from {tactical_demand}×1 + {standard_demand}×1 = {tactical_demand + standard_demand} chassis over 30 days).",
         "error",
         agent="Part-Agent",
     )
@@ -1142,7 +1142,7 @@ async def simulate_multi_sku_contention(
     await emit_logs([log])
 
     # Restore original burn rate
-    ch101_inv.daily_burn_rate = original_burn_rate
+    shared_inv.daily_burn_rate = original_burn_rate
     db.flush()
 
     # ---------------------------------------------------------------
@@ -1168,7 +1168,7 @@ async def simulate_multi_sku_contention(
             "criticality": fl001t.criticality.value,
             "priority": 1,
             "demand": tactical_demand,
-            "chassis_needed": tactical_demand * 2,
+            "chassis_needed": tactical_demand * 1,
         })
     if fl001s:
         prioritization.append({
@@ -1210,7 +1210,7 @@ async def simulate_multi_sku_contention(
         db,
         f"Multi-SKU Contention simulation complete: "
         f"FL-001-T ({tactical_demand}) + FL-001-S ({standard_demand}) = {combined_demand} units total. "
-        f"700 chassis needed, {len(ghost_result['purchase_orders'])} PO(s) generated.",
+        f"{combined_demand} chassis needed, {len(ghost_result['purchase_orders'])} PO(s) generated.",
         "success" if ghost_result["purchase_orders"] else "warning",
     )
     all_logs.append(summary)
@@ -2106,7 +2106,7 @@ async def simulate_seasonal_ramp(
 
 @router.post("/demand-horizon", response_model=DemandHorizonResponse)
 async def simulate_demand_horizon(
-    part_id: str = Query(default="CH-101", description="Part to evaluate"),
+    part_id: str = Query(default="CH-231", description="Part to evaluate"),
     demand_qty: int = Query(default=500, description="Quantity demanded"),
     days_until_needed: int = Query(default=30, description="Days until demand must be fulfilled"),
     db: Session = Depends(get_db),
