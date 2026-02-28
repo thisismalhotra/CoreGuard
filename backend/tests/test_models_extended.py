@@ -1,15 +1,24 @@
 """Tests for the extended models: SupplierContract, AlternateSupplier, multi-level BOM."""
 
+from datetime import datetime, timezone
+
 import pytest
-from datetime import datetime, timezone, timedelta
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from database.models import (
-    Base, Supplier, Part, Inventory, BOMEntry, SupplierContract,
-    ScheduledRelease, AlternateSupplier,
-    PartCategory, CriticalityLevel, SupplierTier, SupplierRegion,
-    ContractType, ContractStatus, ReleaseStatus,
+    AlternateSupplier,
+    Base,
+    BOMEntry,
+    ContractStatus,
+    ContractType,
+    CriticalityLevel,
+    Part,
+    PartCategory,
+    Supplier,
+    SupplierContract,
+    SupplierRegion,
+    SupplierTier,
 )
 
 

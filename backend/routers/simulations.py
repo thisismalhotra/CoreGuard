@@ -6,36 +6,54 @@ logs to connected dashboards via Socket.io.
 """
 
 import asyncio
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.orm import Session
 
-from rate_limit import limiter
-
-from database.connection import get_db, engine
-from database.models import (
-    Part, Supplier, DemandForecast, AgentLog, Base, BOMEntry, Inventory,
-    SupplierContract, AlternateSupplier, SalesOrder,
-    SupplierRegion, ContractStatus, SalesOrderStatus,
-)
 from agents.aura import detect_demand_spike
-from agents.dispatcher import triage_demand_spike
-from agents.part_agent import monitor_all_components, monitor_part
-from agents.core_guard import calculate_net_requirements, calculate_blast_radius, ring_fence_inventory
-from agents.ghost_writer import process_buy_orders
-from agents.eagle_eye import inspect_batch
+from agents.core_guard import calculate_blast_radius, calculate_net_requirements, ring_fence_inventory
 from agents.data_integrity import run_full_integrity_check
 from agents.demand_horizon import evaluate_demand_horizon
+from agents.dispatcher import triage_demand_spike
+from agents.eagle_eye import inspect_batch
+from agents.ghost_writer import process_buy_orders
+from agents.part_agent import monitor_all_components, monitor_part
+from database.connection import engine, get_db
+from database.models import (
+    AgentLog,
+    AlternateSupplier,
+    Base,
+    BOMEntry,
+    DemandForecast,
+    Inventory,
+    Part,
+    SalesOrder,
+    SalesOrderStatus,
+    Supplier,
+    SupplierContract,
+    SupplierRegion,
+)
+from rate_limit import limiter
 from schemas import (
-    SpikeResponse, SupplyShockResponse, QualityFailResponse,
-    CascadeFailureResponse, ConstitutionBreachResponse,
-    FullBlackoutResponse, SlowBleedResponse, InventoryDecayResponse,
+    CascadeFailureResponse,
+    ConstitutionBreachResponse,
+    ContractExhaustionResponse,
+    DemandHorizonResponse,
+    FullBlackoutResponse,
+    InventoryDecayResponse,
+    MilitarySurgeResponse,
+    MOQTrapResponse,
     MultiSkuContentionResponse,
-    ContractExhaustionResponse, TariffShockResponse, MOQTrapResponse,
-    MilitarySurgeResponse, SemiconductorAllocationResponse, SeasonalRampResponse,
-    DemandHorizonResponse, ResetResponse,
+    QualityFailResponse,
+    ResetResponse,
+    SeasonalRampResponse,
+    SemiconductorAllocationResponse,
+    SlowBleedResponse,
+    SpikeResponse,
+    SupplyShockResponse,
+    TariffShockResponse,
 )
 
 router = APIRouter(prefix="/api/simulate", tags=["simulations"])
@@ -236,7 +254,7 @@ async def simulate_supply_shock(
 
         alternate = (
             db.query(Supplier)
-            .filter(Supplier.id != supplier.id, Supplier.is_active == True)
+            .filter(Supplier.id != supplier.id, Supplier.is_active.is_(True))
             .order_by(Supplier.reliability_score.desc())
             .first()
         )
@@ -424,7 +442,7 @@ async def simulate_cascade_failure(
         if part and part.supplier and not part.supplier.is_active:
             alternate = (
                 db.query(Supplier)
-                .filter(Supplier.id != part.supplier_id, Supplier.is_active == True)
+                .filter(Supplier.id != part.supplier_id, Supplier.is_active.is_(True))
                 .order_by(Supplier.reliability_score.desc())
                 .first()
             )
@@ -693,7 +711,6 @@ async def simulate_slow_bleed(
     multipliers = [1.0, 1.375, 1.75, 2.125]
     runway_progression: list[dict[str, Any]] = []
     handshake_triggered = False
-    crisis_signal: dict[str, Any] | None = None
 
     for day_num, mult in enumerate(multipliers, start=1):
         simulated_rate = round(original_burn_rate * mult, 2)
@@ -724,7 +741,6 @@ async def simulate_slow_bleed(
 
         if result["handshake_triggered"] and not handshake_triggered:
             handshake_triggered = True
-            crisis_signal = result["crisis_signal"]
 
             log = _sys_log(
                 db,
@@ -897,8 +913,8 @@ async def simulate_inventory_decay(
         db.flush()
         log = _sys_log(
             db,
-            f"Decay injected: LNS-221 last_updated set to 200 days ago "
-            f"(suspect: no inventory movement for 6+ months).",
+            "Decay injected: LNS-221 last_updated set to 200 days ago "
+            "(suspect: no inventory movement for 6+ months).",
             "warning",
             agent="System",
         )
@@ -2096,16 +2112,6 @@ async def simulate_seasonal_ramp(
             all_logs.extend(ghost_result["logs"])
             await emit_logs(ghost_result["logs"])
 
-    # Collect all POs from this simulation
-    all_pos = (
-        db.query(AgentLog)
-        .filter(AgentLog.agent == "Ghost-Writer", AgentLog.message.like("%PO-%"))
-        .order_by(AgentLog.id.desc())
-        .limit(20)
-        .all()
-    )
-
-    # Re-run ghost_writer for a summary of all POs generated
     # For the response, collect POs generated during this simulation
     ghost_result_final: dict[str, Any] = {"purchase_orders": [], "logs": []}
 

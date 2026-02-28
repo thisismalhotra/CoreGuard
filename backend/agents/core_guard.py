@@ -12,13 +12,16 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from typing import Any
+
 from sqlalchemy.orm import Session
 
-from database.models import (
-    Part, BOMEntry, Inventory, CriticalityLevel,
-    RingFenceAuditLog, SalesOrder,
-)
 from agents.utils import create_agent_log
+from database.models import (
+    BOMEntry,
+    CriticalityLevel,
+    Part,
+    RingFenceAuditLog,
+)
 
 AGENT_NAME = "Core-Guard"
 

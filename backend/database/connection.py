@@ -4,8 +4,10 @@ Uses SQLite for local development simplicity.
 """
 
 from pathlib import Path
+
 from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker
+
 from .models import Base
 
 # DB file lives alongside the backend code

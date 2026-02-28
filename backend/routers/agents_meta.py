@@ -6,19 +6,39 @@ from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy.orm import Session
 
 from database.connection import get_db
-from rate_limit import limiter
 from database.models import (
-    Supplier, Part, Inventory, BOMEntry, PurchaseOrder,
-    DemandForecast, QualityInspection, AgentLog,
-    SalesOrder, RingFenceAuditLog, InventoryHealthRecord,
-    SupplierContract, ScheduledRelease, AlternateSupplier,
+    AgentLog,
+    AlternateSupplier,
+    BOMEntry,
+    DemandForecast,
+    Inventory,
+    InventoryHealthRecord,
+    Part,
+    PurchaseOrder,
+    QualityInspection,
+    RingFenceAuditLog,
+    SalesOrder,
+    ScheduledRelease,
+    Supplier,
+    SupplierContract,
 )
+from rate_limit import limiter
 from schemas import (
-    AgentMetadata, DBSupplierRow, DBPartRow, DBInventoryRow,
-    DBBomRow, DBOrderRow, DBDemandForecastRow, DBQualityInspectionRow,
-    DBAgentLogRow, DBSalesOrderRow, DBRingFenceAuditRow,
-    DBInventoryHealthRow, DBSupplierContractRow, DBScheduledReleaseRow,
+    AgentMetadata,
+    DBAgentLogRow,
     DBAlternateSupplierRow,
+    DBBomRow,
+    DBDemandForecastRow,
+    DBInventoryHealthRow,
+    DBInventoryRow,
+    DBOrderRow,
+    DBPartRow,
+    DBQualityInspectionRow,
+    DBRingFenceAuditRow,
+    DBSalesOrderRow,
+    DBScheduledReleaseRow,
+    DBSupplierContractRow,
+    DBSupplierRow,
 )
 
 router = APIRouter(prefix="/api", tags=["agents"])

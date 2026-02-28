@@ -13,14 +13,16 @@ Stateless: reads DB state, emits logs, returns a prioritised action plan.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
 from typing import Any
+
 from sqlalchemy.orm import Session
 
-from database.models import (
-    Part, BOMEntry, CriticalityLevel,
-)
 from agents.utils import create_agent_log
+from database.models import (
+    BOMEntry,
+    CriticalityLevel,
+    Part,
+)
 
 AGENT_NAME = "Dispatcher"
 
@@ -148,7 +150,7 @@ def triage_demand_spike(
             "warning",
         ))
 
-    logs.append(_log(db, f"Handing prioritised queue to Core-Guard for MRP processing."))
+    logs.append(_log(db, "Handing prioritised queue to Core-Guard for MRP processing."))
 
     # NOTE: No db.commit() here — the calling simulation endpoint owns the transaction.
     # Agents only flush() to get IDs; the single commit happens in the router.

@@ -17,10 +17,11 @@ Stateless: operates on DB state passed in. Emits structured logs for Glass Box v
 from __future__ import annotations
 
 from typing import Any
+
 from sqlalchemy.orm import Session
 
-from database.models import Part, Inventory, Supplier, BOMEntry
 from agents.utils import create_agent_log
+from database.models import BOMEntry, Part
 
 AGENT_NAME = "Part-Agent"
 

@@ -9,9 +9,9 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 
 from database.connection import get_db
-from database.models import PurchaseOrder, Part, Supplier, OrderStatus, AgentLog
+from database.models import AgentLog, OrderStatus, Part, PurchaseOrder, Supplier
 from rate_limit import limiter
-from schemas import PurchaseOrderResponse, CreatePurchaseOrderRequest, UpdateOrderStatusRequest
+from schemas import CreatePurchaseOrderRequest, PurchaseOrderResponse, UpdateOrderStatusRequest
 
 router = APIRouter(prefix="/api", tags=["orders"])
 

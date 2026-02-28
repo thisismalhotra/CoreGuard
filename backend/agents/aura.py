@@ -11,10 +11,11 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from typing import Any
+
 from sqlalchemy.orm import Session
 
-from database.models import Part, DemandForecast
 from agents.utils import create_agent_log
+from database.models import DemandForecast, Part
 
 AGENT_NAME = "Aura"
 SPIKE_THRESHOLD = 1.2  # Fire DEMAND_SPIKE when actual > forecast * threshold

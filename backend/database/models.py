@@ -6,12 +6,12 @@ All parts, BOMs, suppliers, and orders are modeled here.
 Foreign keys enforce referential integrity between Parts <-> Suppliers.
 """
 
-from datetime import datetime, timezone
-from sqlalchemy import (
-    Boolean, Column, Integer, String, Float, DateTime, ForeignKey, Text, Enum as SAEnum
-)
-from sqlalchemy.orm import relationship, DeclarativeBase
 import enum
+from datetime import datetime, timezone
+
+from sqlalchemy import Boolean, Column, DateTime, Float, ForeignKey, Integer, String, Text
+from sqlalchemy import Enum as SAEnum
+from sqlalchemy.orm import DeclarativeBase, relationship
 
 
 class Base(DeclarativeBase):

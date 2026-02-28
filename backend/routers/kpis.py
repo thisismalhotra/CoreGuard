@@ -6,9 +6,9 @@ from fastapi import APIRouter, Depends, Request
 from sqlalchemy.orm import Session
 
 from database.connection import get_db
-from database.models import Inventory, PurchaseOrder, AgentLog
+from database.models import AgentLog, Inventory, PurchaseOrder
 from rate_limit import limiter
-from schemas import KPIsResponse, LogDelayResponse, GlassBoxLog
+from schemas import GlassBoxLog, KPIsResponse, LogDelayResponse
 
 router = APIRouter(prefix="/api", tags=["kpis"])
 

@@ -11,18 +11,17 @@ import logging
 from contextlib import asynccontextmanager
 
 import socketio
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 
-logger = logging.getLogger(__name__)
-from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
-
 from database.connection import init_db
 from rate_limit import limiter
-from routers import inventory, orders, kpis, agents_meta, simulations
+from routers import agents_meta, inventory, kpis, orders, simulations
 from routers.data_integrity import router as data_integrity_router
 
+logger = logging.getLogger(__name__)
 
 # --- Socket.io setup ---
 sio = socketio.AsyncServer(async_mode="asgi", cors_allowed_origins="*")

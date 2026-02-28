@@ -11,8 +11,6 @@ class TestRecursiveBOMExplosion:
         not just SA-LED-100 (sub-assembly).
         """
         result = calculate_net_requirements(db, "HL-002-P", 2000)
-        # Should have shortages at the leaf (component) level
-        shortage_part_ids = [s["part_id"] for s in result["shortages"]]
         # Sub-assemblies (SA-*) should NOT appear as shortages — only leaf components
         for s in result["shortages"]:
             assert not s["part_id"].startswith("SA-"), \

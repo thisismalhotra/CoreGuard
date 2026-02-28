@@ -12,14 +12,17 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime, timezone
-from typing import Any
 from pathlib import Path
+from typing import Any
+
 from sqlalchemy.orm import Session
 
-from database.models import (
-    PurchaseOrder, Part, Supplier, OrderStatus,
-)
 from agents.utils import create_agent_log
+from database.models import (
+    OrderStatus,
+    Part,
+    PurchaseOrder,
+)
 
 AGENT_NAME = "Ghost-Writer"
 FINANCIAL_CONSTITUTION_MAX_SPEND = 5000.00  # Rule C — hard-coded, LLM cannot override
@@ -125,7 +128,7 @@ def process_buy_orders(
         if pdf_path:
             logs.append(_log(db, f"PDF generated: {pdf_path}", "success"))
         else:
-            logs.append(_log(db, f"PDF generation skipped (fpdf2 not installed).", "warning"))
+            logs.append(_log(db, "PDF generation skipped (fpdf2 not installed).", "warning"))
 
         logs.append(_log(
             db,

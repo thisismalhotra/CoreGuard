@@ -4,18 +4,30 @@ import json
 from datetime import datetime, timezone
 
 import pytest
-from sqlalchemy import create_engine, event
+from fastapi.testclient import TestClient
+from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
-from fastapi.testclient import TestClient
 
-from database.models import (
-    Base, Supplier, Part, Inventory, BOMEntry, DemandForecast, SalesOrder,
-    SupplierContract, AlternateSupplier,
-    PartCategory, CriticalityLevel, SalesOrderStatus,
-    SupplierTier, SupplierRegion, ContractType, ContractStatus,
-)
 from database.connection import get_db
+from database.models import (
+    AlternateSupplier,
+    Base,
+    BOMEntry,
+    ContractStatus,
+    ContractType,
+    CriticalityLevel,
+    DemandForecast,
+    Inventory,
+    Part,
+    PartCategory,
+    SalesOrder,
+    SalesOrderStatus,
+    Supplier,
+    SupplierContract,
+    SupplierRegion,
+    SupplierTier,
+)
 from main import app
 
 

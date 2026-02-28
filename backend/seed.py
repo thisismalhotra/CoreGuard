@@ -25,12 +25,23 @@ logger = logging.getLogger(__name__)
 # Ensure the backend package is importable when running as a script
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from database.connection import init_db, SessionLocal
+from database.connection import SessionLocal, init_db
 from database.models import (
-    Supplier, Part, Inventory, BOMEntry, DemandForecast, SalesOrder,
-    SupplierContract, AlternateSupplier,
-    PartCategory, CriticalityLevel, SalesOrderStatus,
-    SupplierTier, SupplierRegion, ContractType, ContractStatus,
+    AlternateSupplier,
+    BOMEntry,
+    ContractStatus,
+    ContractType,
+    CriticalityLevel,
+    DemandForecast,
+    Inventory,
+    Part,
+    PartCategory,
+    SalesOrder,
+    SalesOrderStatus,
+    Supplier,
+    SupplierContract,
+    SupplierRegion,
+    SupplierTier,
 )
 
 

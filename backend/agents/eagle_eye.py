@@ -13,10 +13,11 @@ from __future__ import annotations
 import random
 from datetime import datetime, timezone
 from typing import Any
+
 from sqlalchemy.orm import Session
 
-from database.models import Part, Supplier, QualityInspection, InspectionResult
 from agents.utils import create_agent_log
+from database.models import InspectionResult, Part, QualityInspection, Supplier
 
 AGENT_NAME = "Eagle-Eye"
 
@@ -161,7 +162,7 @@ def inspect_batch(
         # Query for a different active supplier with the best reliability
         alternate = (
             db.query(Supplier)
-            .filter(Supplier.id != part.supplier_id, Supplier.is_active == True)
+            .filter(Supplier.id != part.supplier_id, Supplier.is_active.is_(True))
             .order_by(Supplier.reliability_score.desc())
             .first()
         )

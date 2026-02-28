@@ -9,40 +9,38 @@ Covers:
   - Inventory available clamping
 """
 
-import pytest
-from database.models import (
-    Part, Inventory, Supplier, CriticalityLevel, OrderStatus,
-)
-from agents.core_guard import (
-    calculate_net_requirements, ROUTING_RULES,
-    calculate_blast_radius, ring_fence_inventory,
-)
-from agents.ghost_writer import (
-    process_buy_orders,
-    FINANCIAL_CONSTITUTION_MAX_SPEND,
-)
 from agents.aura import detect_demand_spike
-from agents.part_agent import (
-    calculate_dynamic_safety_stock,
-    calculate_runway,
-    evaluate_handshake_trigger,
-    monitor_part,
-    monitor_all_components,
+from agents.core_guard import (
+    ROUTING_RULES,
+    calculate_blast_radius,
+    calculate_net_requirements,
+    ring_fence_inventory,
 )
 from agents.data_integrity import (
     detect_ghost_inventory,
     detect_suspect_inventory,
     run_full_integrity_check,
-    GHOST_INVENTORY_DAYS,
-    SUSPECT_INVENTORY_DAYS,
 )
 from agents.demand_horizon import (
     classify_demand_zone,
     evaluate_demand_horizon,
-    ZONE_1_MIN_DAYS,
-    ZONE_2_MIN_DAYS,
 )
-
+from agents.ghost_writer import (
+    FINANCIAL_CONSTITUTION_MAX_SPEND,
+    process_buy_orders,
+)
+from agents.part_agent import (
+    calculate_dynamic_safety_stock,
+    calculate_runway,
+    evaluate_handshake_trigger,
+    monitor_all_components,
+    monitor_part,
+)
+from database.models import (
+    CriticalityLevel,
+    Inventory,
+    Part,
+)
 
 # ---------------------------------------------------------------------------
 # Inventory.available property
@@ -246,7 +244,7 @@ class TestGhostWriterConstitution:
         }]
         result = process_buy_orders(db, buy_orders)
         assert len(result["purchase_orders"]) == 0
-        error_logs = [l for l in result["logs"] if l["type"] == "error"]
+        error_logs = [entry for entry in result["logs"] if entry["type"] == "error"]
         assert len(error_logs) > 0
 
     def test_multiple_orders_mixed(self, db):
@@ -443,7 +441,7 @@ class TestDataIntegrity:
 
     def test_ghost_inventory_detected(self, db):
         """Parts with burn rate > 0 and no consumption should be flagged as ghost."""
-        from datetime import datetime, timezone, timedelta
+        from datetime import datetime, timedelta, timezone
 
         # Set CH-101's last_consumption_date to 20 days ago (> 14-day threshold)
         inv = db.query(Inventory).join(Part).filter(Part.part_id == "CH-101").first()
@@ -458,7 +456,7 @@ class TestDataIntegrity:
 
     def test_no_ghost_when_recently_consumed(self, db):
         """Parts consumed recently should not be flagged."""
-        from datetime import datetime, timezone, timedelta
+        from datetime import datetime, timedelta, timezone
 
         # Set all parts to recently consumed
         for inv in db.query(Inventory).all():
@@ -470,7 +468,7 @@ class TestDataIntegrity:
 
     def test_suspect_inventory_detected(self, db):
         """Parts not moved in 6+ months should be flagged as suspect."""
-        from datetime import datetime, timezone, timedelta
+        from datetime import datetime, timedelta, timezone
 
         # Set CH-101's last_updated to 200 days ago (> 180-day threshold)
         inv = db.query(Inventory).join(Part).filter(Part.part_id == "CH-101").first()
@@ -495,7 +493,7 @@ class TestSlowBleedScenario:
 
     def test_slow_bleed_detects_runway_decline(self, db):
         """Part Agent should detect runway declining across simulated days."""
-        from agents.part_agent import monitor_part, calculate_runway
+        from agents.part_agent import monitor_part
 
         inv = db.query(Inventory).join(Part).filter(Part.part_id == "CH-101").first()
         burn_rates = [40.0, 55.0, 70.0, 85.0]
@@ -528,7 +526,8 @@ class TestInventoryDecayScenario:
 
     def test_ghost_inventory_changes_runway(self, db):
         """After ghost detection, recalculated runway should reflect corrected inventory."""
-        from datetime import datetime, timezone, timedelta
+        from datetime import datetime, timedelta, timezone
+
         from agents.part_agent import monitor_part
 
         inv = db.query(Inventory).join(Part).filter(Part.part_id == "CH-101").first()
@@ -571,7 +570,7 @@ class TestMultiSkuContentionScenario:
 
         inv = db.query(Inventory).join(Part).filter(Part.part_id == "CH-101").first()
 
-        result_solo = monitor_part(db, "CH-101")
+        monitor_part(db, "CH-101")
 
         inv.daily_burn_rate = inv.daily_burn_rate * 3
         db.flush()

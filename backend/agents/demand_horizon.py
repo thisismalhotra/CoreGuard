@@ -23,10 +23,11 @@ Stateless: operates on DB state passed in. Emits structured logs for Glass Box v
 from __future__ import annotations
 
 from typing import Any
+
 from sqlalchemy.orm import Session
 
-from database.models import Part, Supplier
 from agents.utils import create_agent_log
+from database.models import Part, Supplier
 
 AGENT_NAME = "Demand-Horizon"
 
@@ -197,7 +198,7 @@ def evaluate_demand_horizon(
             db.query(Supplier)
             .filter(
                 Supplier.id != part.supplier_id,
-                Supplier.is_active == True,
+                Supplier.is_active.is_(True),
             )
             .order_by(Supplier.lead_time_days.asc())  # Fastest first for crisis
             .first()

@@ -13,10 +13,22 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from database.models import (
-    Base, Supplier, Part, Inventory, BOMEntry, DemandForecast, SalesOrder,
-    SupplierContract, AlternateSupplier,
-    PartCategory, CriticalityLevel, SalesOrderStatus,
-    SupplierTier, SupplierRegion, ContractType, ContractStatus,
+    AlternateSupplier,
+    Base,
+    BOMEntry,
+    ContractStatus,
+    ContractType,
+    CriticalityLevel,
+    DemandForecast,
+    Inventory,
+    Part,
+    PartCategory,
+    SalesOrder,
+    SalesOrderStatus,
+    Supplier,
+    SupplierContract,
+    SupplierRegion,
+    SupplierTier,
 )
 
 
