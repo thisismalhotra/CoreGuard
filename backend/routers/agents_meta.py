@@ -10,11 +10,14 @@ from database.models import (
     Supplier, Part, Inventory, BOMEntry, PurchaseOrder,
     DemandForecast, QualityInspection, AgentLog,
     SalesOrder, RingFenceAuditLog, InventoryHealthRecord,
+    SupplierContract, ScheduledRelease, AlternateSupplier,
 )
 from schemas import (
     AgentMetadata, DBSupplierRow, DBPartRow, DBInventoryRow,
     DBBomRow, DBOrderRow, DBDemandForecastRow, DBQualityInspectionRow,
-    DBAgentLogRow,
+    DBAgentLogRow, DBSalesOrderRow, DBRingFenceAuditRow,
+    DBInventoryHealthRow, DBSupplierContractRow, DBScheduledReleaseRow,
+    DBAlternateSupplierRow,
 )
 
 router = APIRouter(prefix="/api", tags=["agents"])
@@ -204,7 +207,13 @@ def db_suppliers(
     return [
         {"id": s.id, "name": s.name, "contact_email": s.contact_email,
          "lead_time_days": s.lead_time_days, "reliability_score": s.reliability_score,
-         "is_active": bool(s.is_active)}
+         "is_active": bool(s.is_active),
+         "tier": s.tier.value if s.tier else None,
+         "region": s.region.value if s.region else None,
+         "expedite_lead_time_days": s.expedite_lead_time_days,
+         "minimum_order_qty": s.minimum_order_qty,
+         "capacity_per_month": s.capacity_per_month,
+         "payment_terms": s.payment_terms}
         for s in rows
     ]
 
@@ -238,8 +247,10 @@ def db_inventory(
     return [
         {"id": inv.id, "part": inv.part.part_id if inv.part else None,
          "on_hand": inv.on_hand, "safety_stock": inv.safety_stock,
-         "reserved": inv.reserved, "available": inv.available,
-         "last_updated": inv.last_updated.isoformat() if inv.last_updated else None}
+         "reserved": inv.reserved, "ring_fenced_qty": inv.ring_fenced_qty,
+         "daily_burn_rate": inv.daily_burn_rate, "available": inv.available,
+         "last_updated": inv.last_updated.isoformat() if inv.last_updated else None,
+         "last_consumption_date": inv.last_consumption_date.isoformat() if inv.last_consumption_date else None}
         for inv in rows
     ]
 
@@ -293,7 +304,10 @@ def db_demand_forecast(
         {"id": d.id, "part": d.part.part_id if d.part else None,
          "forecast_qty": d.forecast_qty, "actual_qty": d.actual_qty,
          "period": d.period,
-         "updated_at": d.updated_at.isoformat() if d.updated_at else None}
+         "updated_at": d.updated_at.isoformat() if d.updated_at else None,
+         "forecast_accuracy_pct": d.forecast_accuracy_pct,
+         "source": d.source, "confidence_level": d.confidence_level,
+         "notes": d.notes}
         for d in rows
     ]
 
@@ -331,7 +345,7 @@ def db_agent_logs(
     ]
 
 
-@router.get("/db/sales_orders")
+@router.get("/db/sales_orders", response_model=list[DBSalesOrderRow])
 def db_sales_orders(
     db: Session = Depends(get_db),
     limit: int = Query(default=100, ge=1, le=1000),
@@ -349,7 +363,7 @@ def db_sales_orders(
     ]
 
 
-@router.get("/db/ring_fence_audit")
+@router.get("/db/ring_fence_audit", response_model=list[DBRingFenceAuditRow])
 def db_ring_fence_audit(
     db: Session = Depends(get_db),
     limit: int = Query(default=100, ge=1, le=1000),
@@ -367,7 +381,7 @@ def db_ring_fence_audit(
     ]
 
 
-@router.get("/db/inventory_health")
+@router.get("/db/inventory_health", response_model=list[DBInventoryHealthRow])
 def db_inventory_health(
     db: Session = Depends(get_db),
     limit: int = Query(default=100, ge=1, le=1000),
@@ -380,4 +394,67 @@ def db_inventory_health(
          "resolved": bool(h.resolved), "notes": h.notes,
          "detected_at": h.detected_at.isoformat() if h.detected_at else None}
         for h in rows
+    ]
+
+
+@router.get("/db/supplier_contracts", response_model=list[DBSupplierContractRow])
+def db_supplier_contracts(
+    db: Session = Depends(get_db),
+    limit: int = Query(default=100, ge=1, le=1000),
+    offset: int = Query(default=0, ge=0),
+) -> list[dict]:
+    """Raw supplier_contracts table dump."""
+    rows = db.query(SupplierContract).order_by(SupplierContract.id).offset(offset).limit(limit).all()
+    return [
+        {"id": c.id, "contract_number": c.contract_number,
+         "supplier": c.supplier.name if c.supplier else None,
+         "contract_type": c.contract_type.value,
+         "start_date": c.start_date.isoformat() if c.start_date else None,
+         "end_date": c.end_date.isoformat() if c.end_date else None,
+         "total_committed_value": c.total_committed_value,
+         "total_committed_qty": c.total_committed_qty,
+         "released_value": c.released_value, "released_qty": c.released_qty,
+         "remaining_value": c.remaining_value, "remaining_qty": c.remaining_qty,
+         "status": c.status.value}
+        for c in rows
+    ]
+
+
+@router.get("/db/scheduled_releases", response_model=list[DBScheduledReleaseRow])
+def db_scheduled_releases(
+    db: Session = Depends(get_db),
+    limit: int = Query(default=100, ge=1, le=1000),
+    offset: int = Query(default=0, ge=0),
+) -> list[dict]:
+    """Raw scheduled_releases table dump."""
+    rows = db.query(ScheduledRelease).order_by(ScheduledRelease.id).offset(offset).limit(limit).all()
+    return [
+        {"id": r.id, "release_number": r.release_number,
+         "contract": r.contract.contract_number if r.contract else None,
+         "part": r.part.part_id if r.part else None,
+         "quantity": r.quantity,
+         "requested_delivery_date": r.requested_delivery_date.isoformat() if r.requested_delivery_date else None,
+         "actual_delivery_date": r.actual_delivery_date.isoformat() if r.actual_delivery_date else None,
+         "status": r.status.value}
+        for r in rows
+    ]
+
+
+@router.get("/db/alternate_suppliers", response_model=list[DBAlternateSupplierRow])
+def db_alternate_suppliers(
+    db: Session = Depends(get_db),
+    limit: int = Query(default=100, ge=1, le=1000),
+    offset: int = Query(default=0, ge=0),
+) -> list[dict]:
+    """Raw alternate_suppliers table dump."""
+    rows = db.query(AlternateSupplier).order_by(AlternateSupplier.id).offset(offset).limit(limit).all()
+    return [
+        {"id": a.id,
+         "part": a.part.part_id if a.part else None,
+         "primary_supplier": a.primary_supplier.name if a.primary_supplier else None,
+         "alternate_supplier": a.alternate_supplier.name if a.alternate_supplier else None,
+         "cost_premium_pct": a.cost_premium_pct,
+         "lead_time_delta_days": a.lead_time_delta_days,
+         "notes": a.notes}
+        for a in rows
     ]

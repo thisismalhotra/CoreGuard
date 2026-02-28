@@ -351,6 +351,12 @@ class DBSupplierRow(BaseModel):
     lead_time_days: int
     reliability_score: float
     is_active: bool
+    tier: Optional[str] = None
+    region: Optional[str] = None
+    expedite_lead_time_days: Optional[int] = None
+    minimum_order_qty: int = 1
+    capacity_per_month: Optional[int] = None
+    payment_terms: Optional[str] = None
 
 
 class DBPartRow(BaseModel):
@@ -371,8 +377,11 @@ class DBInventoryRow(BaseModel):
     on_hand: int
     safety_stock: int
     reserved: int
+    ring_fenced_qty: int = 0
+    daily_burn_rate: float = 0.0
     available: int
     last_updated: Optional[str] = None
+    last_consumption_date: Optional[str] = None
 
 
 class DBBomRow(BaseModel):
@@ -402,6 +411,10 @@ class DBDemandForecastRow(BaseModel):
     actual_qty: int
     period: Optional[str] = None
     updated_at: Optional[str] = None
+    forecast_accuracy_pct: Optional[float] = None
+    source: Optional[str] = None
+    confidence_level: Optional[str] = None
+    notes: Optional[str] = None
 
 
 class DBQualityInspectionRow(BaseModel):
@@ -419,6 +432,74 @@ class DBAgentLogRow(BaseModel):
     message: str
     log_type: str
     timestamp: Optional[str] = None
+
+
+class DBSalesOrderRow(BaseModel):
+    id: int
+    order_number: str
+    part: Optional[str] = None
+    quantity: int
+    status: str
+    priority: str
+    created_at: Optional[str] = None
+
+
+class DBRingFenceAuditRow(BaseModel):
+    id: int
+    part_id: str
+    order_ref: str
+    attempted_by: str
+    qty_requested: int
+    qty_ring_fenced: int
+    action: str
+    message: Optional[str] = None
+    timestamp: Optional[str] = None
+
+
+class DBInventoryHealthRow(BaseModel):
+    id: int
+    part_id: str
+    flag: str
+    resolved: bool
+    notes: Optional[str] = None
+    detected_at: Optional[str] = None
+
+
+class DBSupplierContractRow(BaseModel):
+    id: int
+    contract_number: str
+    supplier: Optional[str] = None
+    contract_type: str
+    start_date: Optional[str] = None
+    end_date: Optional[str] = None
+    total_committed_value: Optional[float] = None
+    total_committed_qty: Optional[int] = None
+    released_value: float = 0.0
+    released_qty: int = 0
+    remaining_value: float = 0.0
+    remaining_qty: int = 0
+    status: str
+
+
+class DBScheduledReleaseRow(BaseModel):
+    id: int
+    release_number: str
+    contract: Optional[str] = None
+    part: Optional[str] = None
+    quantity: int
+    requested_delivery_date: Optional[str] = None
+    actual_delivery_date: Optional[str] = None
+    status: str
+
+
+class DBAlternateSupplierRow(BaseModel):
+    id: int
+    part: Optional[str] = None
+    primary_supplier: Optional[str] = None
+    alternate_supplier: Optional[str] = None
+    cost_premium_pct: float
+    lead_time_delta_days: int
+    notes: Optional[str] = None
 
 
 # ---------------------------------------------------------------------------

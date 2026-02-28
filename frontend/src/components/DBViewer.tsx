@@ -17,6 +17,12 @@ const TABLES = [
   { key: "orders", label: "Purchase Orders", endpoint: "/api/db/orders" },
   { key: "demand", label: "Demand Forecast", endpoint: "/api/db/demand_forecast" },
   { key: "quality", label: "Quality Inspections", endpoint: "/api/db/quality_inspections" },
+  { key: "sales_orders", label: "Sales Orders", endpoint: "/api/db/sales_orders" },
+  { key: "contracts", label: "Contracts", endpoint: "/api/db/supplier_contracts" },
+  { key: "releases", label: "Releases", endpoint: "/api/db/scheduled_releases" },
+  { key: "alt_suppliers", label: "Alt Suppliers", endpoint: "/api/db/alternate_suppliers" },
+  { key: "ring_fence", label: "Ring Fence Audit", endpoint: "/api/db/ring_fence_audit" },
+  { key: "inv_health", label: "Inventory Health", endpoint: "/api/db/inventory_health" },
   { key: "logs", label: "Agent Logs", endpoint: "/api/db/agent_logs" },
 ] as const;
 
@@ -39,6 +45,43 @@ function inspectionColor(result: string): string {
     case "PASS": return "bg-green-600";
     case "FAIL": return "bg-red-600";
     case "PENDING": return "bg-yellow-600";
+    default: return "bg-gray-600";
+  }
+}
+
+function priorityColor(priority: string): string {
+  switch (priority) {
+    case "VIP": return "bg-red-600";
+    case "EXPEDITED": return "bg-yellow-600";
+    case "NORMAL": return "bg-gray-600";
+    default: return "bg-gray-600";
+  }
+}
+
+function flagColor(flag: string): string {
+  switch (flag) {
+    case "GHOST": return "bg-red-600";
+    case "SUSPECT": return "bg-yellow-600";
+    case "NORMAL": return "bg-green-600";
+    default: return "bg-gray-600";
+  }
+}
+
+function actionColor(action: string): string {
+  switch (action) {
+    case "BLOCKED": return "bg-red-600";
+    case "APPROVED": return "bg-green-600";
+    case "RING_FENCED": return "bg-blue-600";
+    default: return "bg-gray-600";
+  }
+}
+
+function contractTypeColor(type: string): string {
+  switch (type) {
+    case "BLANKET_PO": return "bg-blue-600";
+    case "SPOT_BUY": return "bg-yellow-600";
+    case "CONSIGNMENT": return "bg-purple-600";
+    case "FRAMEWORK": return "bg-teal-600";
     default: return "bg-gray-600";
   }
 }
@@ -89,6 +132,42 @@ function DataTable({ rows }: { rows: Record<string, unknown>[] }) {
                 } else if (col === "result" && typeof val === "string") {
                   content = (
                     <Badge className={`${inspectionColor(val)} text-white text-[10px]`}>
+                      {val}
+                    </Badge>
+                  );
+                } else if (col === "priority" && typeof val === "string") {
+                  content = (
+                    <Badge className={`${priorityColor(val)} text-white text-[10px]`}>
+                      {val}
+                    </Badge>
+                  );
+                } else if (col === "flag" && typeof val === "string") {
+                  content = (
+                    <Badge className={`${flagColor(val)} text-white text-[10px]`}>
+                      {val}
+                    </Badge>
+                  );
+                } else if (col === "action" && typeof val === "string") {
+                  content = (
+                    <Badge className={`${actionColor(val)} text-white text-[10px]`}>
+                      {val}
+                    </Badge>
+                  );
+                } else if (col === "contract_type" && typeof val === "string") {
+                  content = (
+                    <Badge className={`${contractTypeColor(val)} text-white text-[10px]`}>
+                      {val}
+                    </Badge>
+                  );
+                } else if (col === "tier" && typeof val === "string") {
+                  content = (
+                    <Badge className="bg-indigo-600 text-white text-[10px]">
+                      {val}
+                    </Badge>
+                  );
+                } else if (col === "region" && typeof val === "string") {
+                  content = (
+                    <Badge className="bg-sky-600 text-white text-[10px]">
                       {val}
                     </Badge>
                   );
@@ -185,7 +264,7 @@ export function DBViewer() {
               DB Viewer
             </h1>
             <p className="text-sm text-muted-foreground">
-              Raw SQLite tables — Core-Guard FL-001 dataset
+              Raw SQLite tables — Core-Guard Supply Chain Dataset
             </p>
           </div>
         </div>
