@@ -246,6 +246,12 @@ export function LiveLogs({
             )}
           </div>
         )}
+        {logs.length > 0 && filteredLogs.length === 0 && (
+          <div className="flex flex-col items-center justify-center h-full gap-2 text-center font-sans">
+            <Search className="h-6 w-6 text-muted-foreground/30" />
+            <p className="text-muted-foreground text-sm">No logs match the current filters.</p>
+          </div>
+        )}
         {filteredLogs.map((log, i) => {
           const time = log.timestamp
             ? new Date(log.timestamp).toLocaleTimeString()
