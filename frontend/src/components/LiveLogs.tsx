@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Trash2, Clock, Terminal, Zap, Search, X } from "lucide-react";
+import { Trash2, Clock, Terminal, Zap, Search, X, Download } from "lucide-react";
 import type { AgentLog } from "@/lib/socket";
 import { api } from "@/lib/api";
 
@@ -209,6 +209,24 @@ export function LiveLogs({
               ))}
             </select>
           </div>
+          <Button
+            variant="outline"
+            size="sm"
+            className="border-input text-muted-foreground hover:text-foreground hover:border-foreground/30 gap-1.5 text-xs h-7"
+            onClick={() => {
+              const blob = new Blob([JSON.stringify(filteredLogs, null, 2)], { type: "application/json" });
+              const url = URL.createObjectURL(blob);
+              const a = document.createElement("a");
+              a.href = url;
+              a.download = `agent-logs-${new Date().toISOString().slice(0, 19)}.json`;
+              a.click();
+              URL.revokeObjectURL(url);
+            }}
+            disabled={filteredLogs.length === 0}
+          >
+            <Download className="h-3 w-3" />
+            Export
+          </Button>
           <Button
             variant="outline"
             size="sm"
