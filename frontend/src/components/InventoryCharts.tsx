@@ -1,5 +1,6 @@
 "use client";
 
+import React from "react";
 import {
   BarChart,
   Bar,
@@ -20,6 +21,14 @@ import type { InventoryItem } from "@/lib/api";
 type Props = {
   items: InventoryItem[];
   loading?: boolean;
+};
+
+const TOOLTIP_STYLE: React.CSSProperties = {
+  backgroundColor: "hsl(var(--card))",
+  borderColor: "hsl(var(--border))",
+  color: "hsl(var(--card-foreground))",
+  borderRadius: "0.5rem",
+  fontSize: "0.75rem",
 };
 
 const COLORS = {
@@ -129,14 +138,7 @@ export function InventoryCharts({ items, loading }: Props) {
                 tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 12 }}
               />
               <YAxis tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 12 }} />
-              <Tooltip
-                contentStyle={{
-                  backgroundColor: "hsl(var(--card))",
-                  border: "1px solid hsl(var(--border))",
-                  borderRadius: "8px",
-                  color: "hsl(var(--foreground))",
-                }}
-              />
+              <Tooltip contentStyle={TOOLTIP_STYLE} />
               <Legend />
               <Bar dataKey="On Hand" fill={COLORS.on_hand} radius={[4, 4, 0, 0]} />
               <Bar dataKey="Available" fill={COLORS.available} radius={[4, 4, 0, 0]} />
@@ -183,14 +185,7 @@ export function InventoryCharts({ items, loading }: Props) {
                     return item ? `${item.name} (${item.health}%)` : "";
                   }}
                 />
-                <Tooltip
-                  contentStyle={{
-                    backgroundColor: "hsl(var(--card))",
-                    border: "1px solid hsl(var(--border))",
-                    borderRadius: "8px",
-                    color: "hsl(var(--foreground))",
-                  }}
-                />
+                <Tooltip contentStyle={TOOLTIP_STYLE} />
               </RadialBarChart>
             </ResponsiveContainer>
             <div className="flex justify-center gap-4 text-xs text-muted-foreground mt-2">
@@ -232,14 +227,7 @@ export function InventoryCharts({ items, loading }: Props) {
                   orientation="right"
                   tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 12 }}
                 />
-                <Tooltip
-                  contentStyle={{
-                    backgroundColor: "hsl(var(--card))",
-                    border: "1px solid hsl(var(--border))",
-                    borderRadius: "8px",
-                    color: "hsl(var(--foreground))",
-                  }}
-                />
+                <Tooltip contentStyle={TOOLTIP_STYLE} />
                 <Legend />
                 <Bar
                   yAxisId="left"

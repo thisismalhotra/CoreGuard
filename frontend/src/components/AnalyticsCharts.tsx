@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import React, { useEffect, useState } from "react";
 import {
   BarChart,
   Bar,
@@ -18,11 +18,12 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { DollarSign, ShieldCheck, TrendingUp, Users } from "lucide-react";
 import { api, type PurchaseOrder } from "@/lib/api";
 
-const TOOLTIP_STYLE = {
+const TOOLTIP_STYLE: React.CSSProperties = {
   backgroundColor: "hsl(var(--card))",
-  border: "1px solid hsl(var(--border))",
-  borderRadius: "8px",
-  color: "hsl(var(--foreground))",
+  borderColor: "hsl(var(--border))",
+  color: "hsl(var(--card-foreground))",
+  borderRadius: "0.5rem",
+  fontSize: "0.75rem",
 };
 
 const STATUS_COLORS: Record<string, string> = {
