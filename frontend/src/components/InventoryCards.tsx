@@ -7,6 +7,15 @@ import { Button } from "@/components/ui/button";
 import { Package, AlertTriangle, ChevronDown, ChevronRight } from "lucide-react";
 import type { InventoryItem } from "@/lib/api";
 
+type StockSeverity = "critical" | "low" | "normal";
+
+const getStockSeverity = (item: InventoryItem): StockSeverity => {
+  if (!item.safety_stock) return "normal";
+  if (item.available < item.safety_stock * 0.5) return "critical";
+  if (item.available < item.safety_stock) return "low";
+  return "normal";
+};
+
 const CATEGORY_ORDER = ["FINISHED_GOOD", "COMMON_CORE", "SUB_ASSEMBLY", "COMPONENT", "SERVICE"];
 
 const CATEGORY_LABELS: Record<string, string> = {
@@ -59,17 +68,48 @@ function CategoryGroup({ category, items }: { category: string; items: Inventory
       {expanded && (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
           {items.map((item) => {
-            const isLow = item.available < item.safety_stock;
+            const severity = getStockSeverity(item);
+            const isLow = severity !== "normal";
+            const cardTint =
+              severity === "critical"
+                ? "bg-red-950/10 border-red-800"
+                : severity === "low"
+                  ? "bg-yellow-950/10 border-yellow-800"
+                  : "";
             return (
               <Card
                 key={item.part_id}
-                className={`bg-card border-border ${isLow ? "border-red-800" : ""}`}
+                className={`bg-card border-border ${cardTint}`}
               >
                 <CardHeader className="pb-2">
                   <div className="flex items-center justify-between">
-                    <CardTitle className="text-base font-semibold text-foreground">
-                      {item.part_id}
-                    </CardTitle>
+                    <div className="flex items-center gap-2">
+                      {severity === "critical" && (
+                        <span className="relative flex h-2 w-2">
+                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75" />
+                          <span className="relative inline-flex rounded-full h-2 w-2 bg-red-500" />
+                        </span>
+                      )}
+                      {severity === "low" && (
+                        <span className="relative flex h-2 w-2">
+                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-yellow-400 opacity-75" />
+                          <span className="relative inline-flex rounded-full h-2 w-2 bg-yellow-500" />
+                        </span>
+                      )}
+                      <CardTitle className="text-base font-semibold text-foreground">
+                        {item.part_id}
+                      </CardTitle>
+                      {severity === "critical" && (
+                        <Badge variant="destructive" className="text-xs">
+                          CRITICAL
+                        </Badge>
+                      )}
+                      {severity === "low" && (
+                        <Badge className="text-xs bg-yellow-600 hover:bg-yellow-700 text-white">
+                          LOW
+                        </Badge>
+                      )}
+                    </div>
                     <Badge variant={isLow ? "destructive" : "secondary"} className="text-xs">
                       {item.category}
                     </Badge>
