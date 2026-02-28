@@ -113,10 +113,13 @@ const exportCSV = (rows: Record<string, unknown>[], tableName: string) => {
 };
 
 function DataTable({ rows }: { rows: Record<string, unknown>[] }) {
-  const [currentPage, setCurrentPage] = useState(1);
+  const [requestedPage, setCurrentPage] = useState(1);
   const [copiedCell, setCopiedCell] = useState<string | null>(null);
   const rowsPerPage = 25;
   const totalPages = Math.ceil(rows.length / rowsPerPage);
+
+  // Clamp page to valid range — automatically resets when data shrinks
+  const currentPage = Math.min(requestedPage, Math.max(1, totalPages));
   const paginatedRows = rows.slice(
     (currentPage - 1) * rowsPerPage,
     currentPage * rowsPerPage
@@ -127,9 +130,6 @@ function DataTable({ rows }: { rows: Record<string, unknown>[] }) {
     setCopiedCell(cellKey);
     setTimeout(() => setCopiedCell(null), 1500);
   };
-
-  // Reset page when data changes
-  useEffect(() => setCurrentPage(1), [rows]);
 
   if (rows.length === 0) {
     return (

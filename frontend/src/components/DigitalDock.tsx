@@ -74,7 +74,7 @@ export function DigitalDock() {
   const [updatingPO, setUpdatingPO] = useState<string | null>(null);
   const [poError, setPOError] = useState<string | null>(null);
   const [fetchError, setFetchError] = useState<string | null>(null);
-  const [inspPage, setInspPage] = useState(1);
+  const [requestedInspPage, setInspPage] = useState(1);
   const inspPerPage = 25;
 
   const handleUpdateStatus = async (
@@ -119,8 +119,6 @@ export function DigitalDock() {
     fetchData();
   }, [fetchData]);
 
-  useEffect(() => setInspPage(1), [inspections]);
-
   const togglePO = (poNumber: string) => {
     setExpandedPO((prev) => {
       const next = new Set(prev);
@@ -130,8 +128,9 @@ export function DigitalDock() {
     });
   };
 
-  // Inspection pagination
+  // Inspection pagination — clamp page to valid range
   const totalInspPages = Math.ceil(inspections.length / inspPerPage);
+  const inspPage = Math.min(requestedInspPage, Math.max(1, totalInspPages));
   const paginatedInspections = inspections.slice(
     (inspPage - 1) * inspPerPage,
     inspPage * inspPerPage
