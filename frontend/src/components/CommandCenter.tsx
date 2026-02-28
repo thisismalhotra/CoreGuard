@@ -23,6 +23,8 @@ export function CommandCenter() {
   const [inventory, setInventory] = useState<InventoryItem[]>([]);
   const [kpis, setKPIs] = useState<KPIs | null>(null);
   const [connected, setConnected] = useState(false);
+  const [reconnecting, setReconnecting] = useState(false);
+  const [reconnectAttempt, setReconnectAttempt] = useState(0);
   const [backendError, setBackendError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState("logs");
   const [integrityWarnings, setIntegrityWarnings] = useState<Array<{
@@ -78,6 +80,20 @@ export function CommandCenter() {
       toast.error("Disconnected from server");
     });
 
+    socket.io.on("reconnect_attempt", (attempt) => {
+      setReconnecting(true);
+      setReconnectAttempt(attempt);
+    });
+    socket.io.on("reconnect", () => {
+      setReconnecting(false);
+      setReconnectAttempt(0);
+      toast.success("Reconnected to server");
+    });
+    socket.io.on("reconnect_failed", () => {
+      setReconnecting(false);
+      toast.error("Failed to reconnect to server");
+    });
+
     socket.on("agent_log", (log: AgentLog) => {
       // Cap at 1000 entries to prevent unbounded memory growth
       setLogs((prev) => [...prev, log].slice(-1000));
@@ -87,6 +103,9 @@ export function CommandCenter() {
       socket.off("agent_log");
       socket.off("connect");
       socket.off("disconnect");
+      socket.io.off("reconnect_attempt");
+      socket.io.off("reconnect");
+      socket.io.off("reconnect_failed");
       socket.disconnect();
     };
   }, [refreshData]);
@@ -137,12 +156,33 @@ export function CommandCenter() {
           </Link>
           <ThemeToggle />
           <div className="flex items-center gap-2">
-            <div
-              className={`h-2.5 w-2.5 rounded-full ${connected ? "bg-green-400 animate-pulse" : "bg-red-500"}`}
-            />
-            <span className="text-xs text-muted-foreground">
-              {connected ? "Live" : "Disconnected"}
-            </span>
+            {reconnecting ? (
+              <>
+                <span className="h-2 w-2 rounded-full bg-yellow-500 animate-pulse" />
+                <span className="text-xs text-yellow-400">Reconnecting ({reconnectAttempt})...</span>
+              </>
+            ) : connected ? (
+              <>
+                <span className="relative flex h-2 w-2">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75" />
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500" />
+                </span>
+                <span className="text-xs text-green-400">Live</span>
+              </>
+            ) : (
+              <>
+                <span className="h-2 w-2 rounded-full bg-red-500" />
+                <span className="text-xs text-red-400">Disconnected</span>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-6 text-xs text-red-400"
+                  onClick={() => getSocket().connect()}
+                >
+                  Retry
+                </Button>
+              </>
+            )}
           </div>
         </div>
       </div>
