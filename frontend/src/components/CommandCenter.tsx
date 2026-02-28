@@ -13,6 +13,7 @@ import { InventoryCards } from "./InventoryCards";
 import { GodMode } from "./GodMode";
 import { DigitalDock } from "./DigitalDock";
 import { InventoryCharts } from "./InventoryCharts";
+import { AnalyticsCharts } from "./AnalyticsCharts";
 import { ThemeToggle } from "./ThemeToggle";
 import { OnboardingModal } from "./OnboardingModal";
 
@@ -183,6 +184,7 @@ export function CommandCenter() {
 
         <TabsContent value="analytics" className="mt-4">
           <InventoryCharts items={inventory} />
+          <AnalyticsCharts />
         </TabsContent>
 
         <TabsContent value="logs" className="mt-4">
