@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { RefreshCw, Database, ArrowLeft } from "lucide-react";
+import { RefreshCw, Database, ArrowLeft, Download, Copy, Check } from "lucide-react";
 import Link from "next/link";
 import { ThemeToggle } from "./ThemeToggle";
 import { api } from "@/lib/api";
@@ -86,14 +86,47 @@ function contractTypeColor(type: string): string {
   }
 }
 
+/** Export rows as a downloadable CSV file with proper escaping */
+const exportCSV = (rows: Record<string, unknown>[], tableName: string) => {
+  if (rows.length === 0) return;
+  const headers = Object.keys(rows[0]);
+  const csv = [
+    headers.join(","),
+    ...rows.map((row) =>
+      headers
+        .map((h) => {
+          const val = String(row[h] ?? "");
+          return val.includes(",") || val.includes('"') || val.includes("\n")
+            ? `"${val.replace(/"/g, '""')}"`
+            : val;
+        })
+        .join(",")
+    ),
+  ].join("\n");
+  const blob = new Blob([csv], { type: "text/csv" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `${tableName}-${new Date().toISOString().slice(0, 10)}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+};
+
 function DataTable({ rows }: { rows: Record<string, unknown>[] }) {
   const [currentPage, setCurrentPage] = useState(1);
+  const [copiedCell, setCopiedCell] = useState<string | null>(null);
   const rowsPerPage = 25;
   const totalPages = Math.ceil(rows.length / rowsPerPage);
   const paginatedRows = rows.slice(
     (currentPage - 1) * rowsPerPage,
     currentPage * rowsPerPage
   );
+
+  const copyToClipboard = async (value: string, cellKey: string) => {
+    await navigator.clipboard.writeText(value);
+    setCopiedCell(cellKey);
+    setTimeout(() => setCopiedCell(null), 1500);
+  };
 
   // Reset page when data changes
   useEffect(() => setCurrentPage(1), [rows]);
@@ -209,9 +242,26 @@ function DataTable({ rows }: { rows: Record<string, unknown>[] }) {
                   content = String(val);
                 }
 
+                const rawValue = val === null || val === undefined ? "" : String(val);
+                const cellKey = `${i}-${col}`;
+
                 return (
-                  <td key={col} className="px-3 py-2 text-foreground/80 whitespace-nowrap max-w-[400px] truncate">
+                  <td key={col} className="group relative px-3 py-2 text-foreground/80 whitespace-nowrap max-w-[400px] truncate">
                     {content}
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        copyToClipboard(rawValue, cellKey);
+                      }}
+                      className="absolute right-1 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity p-0.5"
+                      title="Copy"
+                    >
+                      {copiedCell === cellKey ? (
+                        <Check className="h-3 w-3 text-green-500" />
+                      ) : (
+                        <Copy className="h-3 w-3 text-muted-foreground hover:text-foreground" />
+                      )}
+                    </button>
                   </td>
                 );
               })}
@@ -311,6 +361,16 @@ export function DBViewer() {
             {rows.length} {rows.length === 1 ? "row" : "rows"}
           </span>
           <ThemeToggle />
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-7 text-xs gap-1.5"
+            onClick={() => exportCSV(data[activeTable] || [], activeTable)}
+            disabled={!data[activeTable]?.length}
+          >
+            <Download className="h-3 w-3" />
+            Export CSV
+          </Button>
           <Button
             variant="outline"
             size="sm"
