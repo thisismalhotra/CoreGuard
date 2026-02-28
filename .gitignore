@@ -23,3 +23,6 @@ frontend/out/
 # IDE
 .vscode/
 .idea/
+
+# Worktrees
+.worktrees/
