@@ -8,6 +8,7 @@ import {
   Layers, DollarSign, WifiOff, RefreshCw, Zap,
   Activity, Ghost, GitMerge,
   FileText, Globe, Box, Shield, Cpu, Sun, Clock,
+  ChevronDown, ChevronUp, Loader2,
 } from "lucide-react";
 import { api } from "@/lib/api";
 
@@ -34,6 +35,10 @@ export function GodMode({
   onSwitchToLogs?: () => void;
 }) {
   const [results, setResults] = useState<Record<string, ScenarioResult>>({});
+  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
+
+  const toggleSection = (key: string) =>
+    setCollapsed((prev) => ({ ...prev, [key]: !prev[key] }));
 
   const scenarios: Scenario[] = [
     {
@@ -241,206 +246,300 @@ export function GodMode({
           </div>
         </div>
       )}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {scenarios.map((scenario) => {
-          const Icon = scenario.icon;
-          const result = results[scenario.id];
-          const isRunning = result?.status === "running";
+      {/* Core Disruptions Section */}
+      <div>
+        <div
+          className="sticky top-0 z-10 bg-card/95 backdrop-blur-sm cursor-pointer flex items-center justify-between py-2"
+          onClick={() => toggleSection("core")}
+        >
+          <div>
+            <div className="flex items-center gap-2 mb-1">
+              <Flame className="h-4 w-4 text-red-400" />
+              <h3 className="text-sm font-semibold text-foreground">Core Disruptions</h3>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Demand spikes, supplier failures, and cascading disruption scenarios
+            </p>
+          </div>
+          {collapsed["core"] ? (
+            <ChevronDown className="h-4 w-4 text-muted-foreground" />
+          ) : (
+            <ChevronUp className="h-4 w-4 text-muted-foreground" />
+          )}
+        </div>
+        {!collapsed["core"] && (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mt-3">
+            {scenarios.map((scenario) => {
+              const Icon = scenario.icon;
+              const result = results[scenario.id];
+              const isRunning = result?.status === "running";
 
-          return (
-            <Card key={scenario.id} className="bg-card border-border flex flex-col">
-              <CardHeader className="pb-2">
-                <CardTitle className="flex items-center gap-2 text-sm font-semibold text-foreground">
-                  <Icon className="h-4 w-4 shrink-0" />
-                  {scenario.label}
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="flex flex-col flex-1 justify-between">
-                <p className="text-xs text-muted-foreground mb-4 leading-relaxed">{scenario.description}</p>
+              return (
+                <Card key={scenario.id} className="bg-card border-border flex flex-col">
+                  <CardHeader className="pb-2">
+                    <CardTitle className="flex items-center gap-2 text-sm font-semibold text-foreground">
+                      <Icon className="h-4 w-4 shrink-0" />
+                      {scenario.label}
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="flex flex-col flex-1 justify-between">
+                    <p className="text-xs text-muted-foreground mb-4 leading-relaxed">{scenario.description}</p>
 
-                {result?.status === "success" && (
-                  <div className="flex items-center gap-1.5 mb-2">
-                    <CheckCircle className="h-3.5 w-3.5 text-green-400 shrink-0" />
-                    <span className="text-xs text-green-400">{result.message}</span>
-                  </div>
-                )}
-                {result?.status === "error" && (
-                  <div className="flex items-center gap-1.5 mb-2">
-                    <AlertCircle className="h-3.5 w-3.5 text-red-400 shrink-0" />
-                    <span className="text-xs text-red-400">{result.message}</span>
-                  </div>
-                )}
+                    {result?.status === "success" && (
+                      <div className="flex items-center gap-1.5 mb-2">
+                        <CheckCircle className="h-3.5 w-3.5 text-green-400 shrink-0" />
+                        <span className="text-xs text-green-400">{result.message}</span>
+                      </div>
+                    )}
+                    {result?.status === "error" && (
+                      <div className="flex items-center gap-1.5 mb-2">
+                        <AlertCircle className="h-3.5 w-3.5 text-red-400 shrink-0" />
+                        <span className="text-xs text-red-400">{result.message}</span>
+                      </div>
+                    )}
 
-                <Button
-                  className={`w-full ${scenario.color} text-white text-xs`}
-                  onClick={() => handleRun(scenario)}
-                  disabled={isAnyRunning || resetting}
-                >
-                  {isRunning ? "Running..." : "Inject Chaos"}
-                </Button>
-              </CardContent>
-            </Card>
-          );
-        })}
+                    <Button
+                      className={`w-full ${scenario.color} text-white text-xs`}
+                      onClick={() => handleRun(scenario)}
+                      disabled={isAnyRunning || resetting}
+                    >
+                      {isRunning ? (
+                        <>
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          Running...
+                        </>
+                      ) : (
+                        "Inject Chaos"
+                      )}
+                    </Button>
+                  </CardContent>
+                </Card>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       {/* Part Agent Spotlight Section */}
       <div className="pt-4 border-t border-border">
-        <div className="flex items-center gap-2 mb-1">
-          <Activity className="h-4 w-4 text-teal-400" />
-          <h3 className="text-sm font-semibold text-foreground">Part Agent Spotlight</h3>
+        <div
+          className="sticky top-0 z-10 bg-card/95 backdrop-blur-sm cursor-pointer flex items-center justify-between py-2"
+          onClick={() => toggleSection("partAgent")}
+        >
+          <div>
+            <div className="flex items-center gap-2 mb-1">
+              <Activity className="h-4 w-4 text-teal-400" />
+              <h3 className="text-sm font-semibold text-foreground">Part Agent Spotlight</h3>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Scenarios where the Part Agent&apos;s autonomous monitoring drives the response
+            </p>
+          </div>
+          {collapsed["partAgent"] ? (
+            <ChevronDown className="h-4 w-4 text-muted-foreground" />
+          ) : (
+            <ChevronUp className="h-4 w-4 text-muted-foreground" />
+          )}
         </div>
-        <p className="text-xs text-muted-foreground mb-4">
-          Scenarios where the Part Agent&apos;s autonomous monitoring drives the response
-        </p>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {partAgentScenarios.map((scenario) => {
-            const Icon = scenario.icon;
-            const result = results[scenario.id];
-            const isRunning = result?.status === "running";
+        {!collapsed["partAgent"] && (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mt-3">
+            {partAgentScenarios.map((scenario) => {
+              const Icon = scenario.icon;
+              const result = results[scenario.id];
+              const isRunning = result?.status === "running";
 
-            return (
-              <Card key={scenario.id} className="bg-card border-border flex flex-col">
-                <CardHeader className="pb-2">
-                  <CardTitle className="flex items-center gap-2 text-sm font-semibold text-foreground">
-                    <Icon className="h-4 w-4 shrink-0" />
-                    {scenario.label}
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="flex flex-col flex-1 justify-between">
-                  <p className="text-xs text-muted-foreground mb-4 leading-relaxed">{scenario.description}</p>
+              return (
+                <Card key={scenario.id} className="bg-card border-border flex flex-col">
+                  <CardHeader className="pb-2">
+                    <CardTitle className="flex items-center gap-2 text-sm font-semibold text-foreground">
+                      <Icon className="h-4 w-4 shrink-0" />
+                      {scenario.label}
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="flex flex-col flex-1 justify-between">
+                    <p className="text-xs text-muted-foreground mb-4 leading-relaxed">{scenario.description}</p>
 
-                  {result?.status === "success" && (
-                    <div className="flex items-center gap-1.5 mb-2">
-                      <CheckCircle className="h-3.5 w-3.5 text-green-400 shrink-0" />
-                      <span className="text-xs text-green-400">{result.message}</span>
-                    </div>
-                  )}
-                  {result?.status === "error" && (
-                    <div className="flex items-center gap-1.5 mb-2">
-                      <AlertCircle className="h-3.5 w-3.5 text-red-400 shrink-0" />
-                      <span className="text-xs text-red-400">{result.message}</span>
-                    </div>
-                  )}
+                    {result?.status === "success" && (
+                      <div className="flex items-center gap-1.5 mb-2">
+                        <CheckCircle className="h-3.5 w-3.5 text-green-400 shrink-0" />
+                        <span className="text-xs text-green-400">{result.message}</span>
+                      </div>
+                    )}
+                    {result?.status === "error" && (
+                      <div className="flex items-center gap-1.5 mb-2">
+                        <AlertCircle className="h-3.5 w-3.5 text-red-400 shrink-0" />
+                        <span className="text-xs text-red-400">{result.message}</span>
+                      </div>
+                    )}
 
-                  <Button
-                    className={`w-full ${scenario.color} text-white text-xs`}
-                    onClick={() => handleRun(scenario)}
-                    disabled={isAnyRunning || resetting}
-                  >
-                    {isRunning ? "Running..." : "Inject Chaos"}
-                  </Button>
-                </CardContent>
-              </Card>
-            );
-          })}
-        </div>
+                    <Button
+                      className={`w-full ${scenario.color} text-white text-xs`}
+                      onClick={() => handleRun(scenario)}
+                      disabled={isAnyRunning || resetting}
+                    >
+                      {isRunning ? (
+                        <>
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          Running...
+                        </>
+                      ) : (
+                        "Inject Chaos"
+                      )}
+                    </Button>
+                  </CardContent>
+                </Card>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       {/* Supply Chain Scenarios Section */}
       <div className="pt-4 border-t border-border">
-        <div className="flex items-center gap-2 mb-1">
-          <Globe className="h-4 w-4 text-sky-400" />
-          <h3 className="text-sm font-semibold text-foreground">Supply Chain Scenarios</h3>
+        <div
+          className="sticky top-0 z-10 bg-card/95 backdrop-blur-sm cursor-pointer flex items-center justify-between py-2"
+          onClick={() => toggleSection("supplyChain")}
+        >
+          <div>
+            <div className="flex items-center gap-2 mb-1">
+              <Globe className="h-4 w-4 text-sky-400" />
+              <h3 className="text-sm font-semibold text-foreground">Supply Chain Scenarios</h3>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Contract, procurement, and geopolitical disruption scenarios
+            </p>
+          </div>
+          {collapsed["supplyChain"] ? (
+            <ChevronDown className="h-4 w-4 text-muted-foreground" />
+          ) : (
+            <ChevronUp className="h-4 w-4 text-muted-foreground" />
+          )}
         </div>
-        <p className="text-xs text-muted-foreground mb-4">
-          Contract, procurement, and geopolitical disruption scenarios
-        </p>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {supplyChainScenarios.map((scenario) => {
-            const Icon = scenario.icon;
-            const result = results[scenario.id];
-            const isRunning = result?.status === "running";
+        {!collapsed["supplyChain"] && (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mt-3">
+            {supplyChainScenarios.map((scenario) => {
+              const Icon = scenario.icon;
+              const result = results[scenario.id];
+              const isRunning = result?.status === "running";
 
-            return (
-              <Card key={scenario.id} className="bg-card border-border flex flex-col">
-                <CardHeader className="pb-2">
-                  <CardTitle className="flex items-center gap-2 text-sm font-semibold text-foreground">
-                    <Icon className="h-4 w-4 shrink-0" />
-                    {scenario.label}
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="flex flex-col flex-1 justify-between">
-                  <p className="text-xs text-muted-foreground mb-4 leading-relaxed">{scenario.description}</p>
+              return (
+                <Card key={scenario.id} className="bg-card border-border flex flex-col">
+                  <CardHeader className="pb-2">
+                    <CardTitle className="flex items-center gap-2 text-sm font-semibold text-foreground">
+                      <Icon className="h-4 w-4 shrink-0" />
+                      {scenario.label}
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="flex flex-col flex-1 justify-between">
+                    <p className="text-xs text-muted-foreground mb-4 leading-relaxed">{scenario.description}</p>
 
-                  {result?.status === "success" && (
-                    <div className="flex items-center gap-1.5 mb-2">
-                      <CheckCircle className="h-3.5 w-3.5 text-green-400 shrink-0" />
-                      <span className="text-xs text-green-400">{result.message}</span>
-                    </div>
-                  )}
-                  {result?.status === "error" && (
-                    <div className="flex items-center gap-1.5 mb-2">
-                      <AlertCircle className="h-3.5 w-3.5 text-red-400 shrink-0" />
-                      <span className="text-xs text-red-400">{result.message}</span>
-                    </div>
-                  )}
+                    {result?.status === "success" && (
+                      <div className="flex items-center gap-1.5 mb-2">
+                        <CheckCircle className="h-3.5 w-3.5 text-green-400 shrink-0" />
+                        <span className="text-xs text-green-400">{result.message}</span>
+                      </div>
+                    )}
+                    {result?.status === "error" && (
+                      <div className="flex items-center gap-1.5 mb-2">
+                        <AlertCircle className="h-3.5 w-3.5 text-red-400 shrink-0" />
+                        <span className="text-xs text-red-400">{result.message}</span>
+                      </div>
+                    )}
 
-                  <Button
-                    className={`w-full ${scenario.color} text-white text-xs`}
-                    onClick={() => handleRun(scenario)}
-                    disabled={isAnyRunning || resetting}
-                  >
-                    {isRunning ? "Running..." : "Inject Chaos"}
-                  </Button>
-                </CardContent>
-              </Card>
-            );
-          })}
-        </div>
+                    <Button
+                      className={`w-full ${scenario.color} text-white text-xs`}
+                      onClick={() => handleRun(scenario)}
+                      disabled={isAnyRunning || resetting}
+                    >
+                      {isRunning ? (
+                        <>
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          Running...
+                        </>
+                      ) : (
+                        "Inject Chaos"
+                      )}
+                    </Button>
+                  </CardContent>
+                </Card>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       {/* Demand Horizon Zones Section */}
       <div className="pt-4 border-t border-border">
-        <div className="flex items-center gap-2 mb-1">
-          <Clock className="h-4 w-4 text-violet-400" />
-          <h3 className="text-sm font-semibold text-foreground">Demand Horizon Zones</h3>
+        <div
+          className="sticky top-0 z-10 bg-card/95 backdrop-blur-sm cursor-pointer flex items-center justify-between py-2"
+          onClick={() => toggleSection("demandHorizon")}
+        >
+          <div>
+            <div className="flex items-center gap-2 mb-1">
+              <Clock className="h-4 w-4 text-violet-400" />
+              <h3 className="text-sm font-semibold text-foreground">Demand Horizon Zones</h3>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              PRD &sect;10 &mdash; classify demand by time horizon to determine agent response
+            </p>
+          </div>
+          {collapsed["demandHorizon"] ? (
+            <ChevronDown className="h-4 w-4 text-muted-foreground" />
+          ) : (
+            <ChevronUp className="h-4 w-4 text-muted-foreground" />
+          )}
         </div>
-        <p className="text-xs text-muted-foreground mb-4">
-          PRD §10 — classify demand by time horizon to determine agent response
-        </p>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {demandHorizonScenarios.map((scenario) => {
-            const Icon = scenario.icon;
-            const result = results[scenario.id];
-            const isRunning = result?.status === "running";
+        {!collapsed["demandHorizon"] && (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mt-3">
+            {demandHorizonScenarios.map((scenario) => {
+              const Icon = scenario.icon;
+              const result = results[scenario.id];
+              const isRunning = result?.status === "running";
 
-            return (
-              <Card key={scenario.id} className="bg-card border-border flex flex-col">
-                <CardHeader className="pb-2">
-                  <CardTitle className="flex items-center gap-2 text-sm font-semibold text-foreground">
-                    <Icon className="h-4 w-4 shrink-0" />
-                    {scenario.label}
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="flex flex-col flex-1 justify-between">
-                  <p className="text-xs text-muted-foreground mb-4 leading-relaxed">{scenario.description}</p>
+              return (
+                <Card key={scenario.id} className="bg-card border-border flex flex-col">
+                  <CardHeader className="pb-2">
+                    <CardTitle className="flex items-center gap-2 text-sm font-semibold text-foreground">
+                      <Icon className="h-4 w-4 shrink-0" />
+                      {scenario.label}
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="flex flex-col flex-1 justify-between">
+                    <p className="text-xs text-muted-foreground mb-4 leading-relaxed">{scenario.description}</p>
 
-                  {result?.status === "success" && (
-                    <div className="flex items-center gap-1.5 mb-2">
-                      <CheckCircle className="h-3.5 w-3.5 text-green-400 shrink-0" />
-                      <span className="text-xs text-green-400">{result.message}</span>
-                    </div>
-                  )}
-                  {result?.status === "error" && (
-                    <div className="flex items-center gap-1.5 mb-2">
-                      <AlertCircle className="h-3.5 w-3.5 text-red-400 shrink-0" />
-                      <span className="text-xs text-red-400">{result.message}</span>
-                    </div>
-                  )}
+                    {result?.status === "success" && (
+                      <div className="flex items-center gap-1.5 mb-2">
+                        <CheckCircle className="h-3.5 w-3.5 text-green-400 shrink-0" />
+                        <span className="text-xs text-green-400">{result.message}</span>
+                      </div>
+                    )}
+                    {result?.status === "error" && (
+                      <div className="flex items-center gap-1.5 mb-2">
+                        <AlertCircle className="h-3.5 w-3.5 text-red-400 shrink-0" />
+                        <span className="text-xs text-red-400">{result.message}</span>
+                      </div>
+                    )}
 
-                  <Button
-                    className={`w-full ${scenario.color} text-white text-xs`}
-                    onClick={() => handleRun(scenario)}
-                    disabled={isAnyRunning || resetting}
-                  >
-                    {isRunning ? "Running..." : "Inject Chaos"}
-                  </Button>
-                </CardContent>
-              </Card>
-            );
-          })}
-        </div>
+                    <Button
+                      className={`w-full ${scenario.color} text-white text-xs`}
+                      onClick={() => handleRun(scenario)}
+                      disabled={isAnyRunning || resetting}
+                    >
+                      {isRunning ? (
+                        <>
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          Running...
+                        </>
+                      ) : (
+                        "Inject Chaos"
+                      )}
+                    </Button>
+                  </CardContent>
+                </Card>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       {/* Reset Button */}
