@@ -8,6 +8,7 @@ Run: uvicorn main:socket_app --reload --host 0.0.0.0 --port 8000
 """
 
 import logging
+import os
 from contextlib import asynccontextmanager
 
 import socketio
@@ -15,10 +16,11 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
+from starlette.middleware.sessions import SessionMiddleware
 
 from database.connection import init_db
 from rate_limit import limiter
-from routers import agents_meta, inventory, kpis, orders, simulations
+from routers import agents_meta, auth as auth_router, inventory, kpis, orders, simulations
 from routers.data_integrity import router as data_integrity_router
 
 logger = logging.getLogger(__name__)
@@ -43,6 +45,8 @@ app = FastAPI(
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
+app.add_middleware(SessionMiddleware, secret_key=os.getenv("JWT_SECRET", "dev-secret"))
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -52,6 +56,7 @@ app.add_middleware(
 )
 
 # --- Register routers ---
+app.include_router(auth_router.router)
 app.include_router(inventory.router)
 app.include_router(orders.router)
 app.include_router(kpis.router)
