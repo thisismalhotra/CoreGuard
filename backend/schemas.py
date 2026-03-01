@@ -359,6 +359,34 @@ class ErrorResponse(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# Auth / RBAC
+# ---------------------------------------------------------------------------
+
+
+class UserResponse(BaseModel):
+    """Public user profile."""
+
+    id: int
+    email: str
+    name: str
+    picture: Optional[str] = None
+    role: str
+    is_active: bool
+
+
+class UpdateUserRoleRequest(BaseModel):
+    """Admin request to change a user's role."""
+
+    role: str  # admin, operator, approver, viewer
+
+
+class UpdateUserActiveRequest(BaseModel):
+    """Admin request to activate/deactivate a user."""
+
+    is_active: bool
+
+
+# ---------------------------------------------------------------------------
 # DB Viewer (raw table dumps)
 # ---------------------------------------------------------------------------
 
