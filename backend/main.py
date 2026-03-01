@@ -10,6 +10,7 @@ Run: uvicorn main:socket_app --reload --host 0.0.0.0 --port 8000
 import logging
 import os
 from contextlib import asynccontextmanager
+from typing import Optional
 
 import socketio
 from fastapi import FastAPI
@@ -18,6 +19,7 @@ from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from starlette.middleware.sessions import SessionMiddleware
 
+from auth import decode_token
 from database.connection import init_db
 from rate_limit import limiter
 from routers import admin as admin_router, agents_meta, auth as auth_router, inventory, kpis, orders, simulations
@@ -26,7 +28,10 @@ from routers.data_integrity import router as data_integrity_router
 logger = logging.getLogger(__name__)
 
 # --- Socket.io setup ---
-sio = socketio.AsyncServer(async_mode="asgi", cors_allowed_origins="*")
+sio = socketio.AsyncServer(
+    async_mode="asgi",
+    cors_allowed_origins=[os.getenv("FRONTEND_URL", "http://localhost:3000")],
+)
 
 
 @asynccontextmanager
@@ -47,10 +52,12 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 app.add_middleware(SessionMiddleware, secret_key=os.getenv("JWT_SECRET", "dev-secret"))
 
+FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:3000")
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=False,   # Wildcard origins + credentials=True is invalid per CORS spec
+    allow_origins=[FRONTEND_URL],
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -77,8 +84,18 @@ socket_app = socketio.ASGIApp(sio, other_asgi_app=app)
 # --- Socket.io events ---
 
 @sio.event
-async def connect(sid: str, environ: dict) -> None:
-    logger.info("Client connected: %s", sid)
+async def connect(sid: str, environ: dict, auth: Optional[dict] = None) -> bool:
+    """Validate JWT on Socket.io connection."""
+    if not auth or not auth.get("token"):
+        logger.warning("Socket connection rejected: no auth token (sid=%s)", sid)
+        return False
+    try:
+        decode_token(auth["token"])
+        logger.info("Client connected: %s", sid)
+        return True
+    except Exception:
+        logger.warning("Socket connection rejected: invalid token (sid=%s)", sid)
+        return False
 
 
 @sio.event

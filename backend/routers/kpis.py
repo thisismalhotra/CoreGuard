@@ -5,8 +5,9 @@ KPI & Settings REST endpoints.
 from fastapi import APIRouter, Depends, Request
 from sqlalchemy.orm import Session
 
+from auth import get_current_user
 from database.connection import get_db
-from database.models import AgentLog, Inventory, PurchaseOrder
+from database.models import AgentLog, Inventory, PurchaseOrder, User
 from rate_limit import limiter
 from schemas import GlassBoxLog, KPIsResponse, LogDelayResponse
 
@@ -20,7 +21,7 @@ def get_log_delay(request: Request) -> float:
 
 @router.get("/kpis", response_model=KPIsResponse)
 @limiter.limit("60/minute")
-def get_kpis(request: Request, db: Session = Depends(get_db)) -> dict:
+def get_kpis(request: Request, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)) -> dict:
     """Dashboard KPIs for the Network Status tab."""
     total_inventory = db.query(Inventory).all()
     total_on_hand = sum(i.on_hand for i in total_inventory)
@@ -45,7 +46,7 @@ def get_kpis(request: Request, db: Session = Depends(get_db)) -> dict:
 
 @router.get("/logs", response_model=list[GlassBoxLog])
 @limiter.limit("60/minute")
-def get_logs(request: Request, limit: int = 50, db: Session = Depends(get_db)) -> list[dict]:
+def get_logs(request: Request, limit: int = 50, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)) -> list[dict]:
     """Return recent agent logs (persisted Glass Box entries)."""
     logs = db.query(AgentLog).order_by(AgentLog.id.desc()).limit(limit).all()
     return [
@@ -61,14 +62,14 @@ def get_logs(request: Request, limit: int = 50, db: Session = Depends(get_db)) -
 
 @router.get("/settings/log-delay", response_model=LogDelayResponse)
 @limiter.limit("60/minute")
-def get_log_delay_setting(request: Request) -> dict:
+def get_log_delay_setting(request: Request, current_user: User = Depends(get_current_user)) -> dict:
     """Return the current log delay setting."""
     return {"delay": getattr(request.app.state, "log_delay_seconds", 2.0)}
 
 
 @router.post("/settings/log-delay", response_model=LogDelayResponse)
 @limiter.limit("60/minute")
-def set_log_delay_setting(request: Request, delay: float = 2.0) -> dict:
+def set_log_delay_setting(request: Request, delay: float = 2.0, current_user: User = Depends(get_current_user)) -> dict:
     """Update the delay (in seconds) between each log line during simulations."""
     # Clamp to reasonable range and store on app.state (thread-safe for single worker)
     request.app.state.log_delay_seconds = max(0.1, min(delay, 5.0))

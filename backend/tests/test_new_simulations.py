@@ -1,7 +1,11 @@
 """Integration tests for the 6 new simulation endpoints (Scenarios 10-15)."""
 
 import json
+import os
 from datetime import datetime, timezone
+
+os.environ.setdefault("JWT_SECRET", "test-secret-key-for-tests")
+os.environ.setdefault("FRONTEND_URL", "http://localhost:3000")
 
 import pytest
 from fastapi.testclient import TestClient
@@ -9,6 +13,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
+from auth import create_token
 from database.connection import get_db
 from database.models import (
     AlternateSupplier,
@@ -27,6 +32,7 @@ from database.models import (
     SupplierContract,
     SupplierRegion,
     SupplierTier,
+    User,
 )
 from main import app
 
@@ -137,20 +143,33 @@ def client():
     ))
     session.flush()
 
+    # Auth user (operator can run simulations)
+    operator = User(google_id="g-operator", email="operator@test.com", name="Operator", role="operator")
+    session.add(operator)
+
     session.commit()
 
     def override_get_db():
         yield session
 
     app.dependency_overrides[get_db] = override_get_db
-    yield TestClient(app)
+    token = create_token(user_id=operator.id, email=operator.email, role=operator.role)
+    test_client = TestClient(app)
+    test_client._auth_headers = {"Authorization": f"Bearer {token}"}
+    yield test_client
     app.dependency_overrides.clear()
     session.close()
 
 
+@pytest.fixture
+def auth_headers(client):
+    """Return auth headers stored on the TestClient."""
+    return client._auth_headers
+
+
 class TestContractExhaustion:
-    def test_contract_exhaustion_returns_success(self, client):
-        resp = client.post("/api/simulate/contract-exhaustion?contract_number=BPA-CREE-2026")
+    def test_contract_exhaustion_returns_success(self, client, auth_headers):
+        resp = client.post("/api/simulate/contract-exhaustion?contract_number=BPA-CREE-2026", headers=auth_headers)
         assert resp.status_code == 200
         data = resp.json()
         assert data["status"] == "simulation_complete"
@@ -158,12 +177,12 @@ class TestContractExhaustion:
         assert data["contract_number"] == "BPA-CREE-2026"
         assert len(data["logs"]) > 0
 
-    def test_contract_exhaustion_unknown_contract(self, client):
-        resp = client.post("/api/simulate/contract-exhaustion?contract_number=NONEXISTENT")
+    def test_contract_exhaustion_unknown_contract(self, client, auth_headers):
+        resp = client.post("/api/simulate/contract-exhaustion?contract_number=NONEXISTENT", headers=auth_headers)
         assert resp.status_code == 404
 
-    def test_contract_exhaustion_has_recommendation(self, client):
-        resp = client.post("/api/simulate/contract-exhaustion?contract_number=BPA-CREE-2026")
+    def test_contract_exhaustion_has_recommendation(self, client, auth_headers):
+        resp = client.post("/api/simulate/contract-exhaustion?contract_number=BPA-CREE-2026", headers=auth_headers)
         data = resp.json()
         assert data["recommendation"] in ("EXTEND", "SPOT_BUY", "RENEGOTIATE")
         assert data["remaining_qty"] >= 0
@@ -171,8 +190,8 @@ class TestContractExhaustion:
 
 
 class TestTariffShock:
-    def test_tariff_shock_returns_success(self, client):
-        resp = client.post("/api/simulate/tariff-shock?region=US&increase_pct=25")
+    def test_tariff_shock_returns_success(self, client, auth_headers):
+        resp = client.post("/api/simulate/tariff-shock?region=US&increase_pct=25", headers=auth_headers)
         assert resp.status_code == 200
         data = resp.json()
         assert data["status"] == "simulation_complete"
@@ -180,20 +199,20 @@ class TestTariffShock:
         assert data["cost_increase_pct"] == 25.0
         assert len(data["logs"]) > 0
 
-    def test_tariff_shock_invalid_region(self, client):
-        resp = client.post("/api/simulate/tariff-shock?region=MARS&increase_pct=25")
+    def test_tariff_shock_invalid_region(self, client, auth_headers):
+        resp = client.post("/api/simulate/tariff-shock?region=MARS&increase_pct=25", headers=auth_headers)
         assert resp.status_code == 400
 
-    def test_tariff_shock_finds_affected_parts(self, client):
-        resp = client.post("/api/simulate/tariff-shock?region=US&increase_pct=30")
+    def test_tariff_shock_finds_affected_parts(self, client, auth_headers):
+        resp = client.post("/api/simulate/tariff-shock?region=US&increase_pct=30", headers=auth_headers)
         data = resp.json()
         assert isinstance(data["affected_suppliers"], list)
         assert isinstance(data["affected_parts"], list)
 
 
 class TestMOQTrap:
-    def test_moq_trap_returns_success(self, client):
-        resp = client.post("/api/simulate/moq-trap?part_id=LED-201&needed_qty=80")
+    def test_moq_trap_returns_success(self, client, auth_headers):
+        resp = client.post("/api/simulate/moq-trap?part_id=LED-201&needed_qty=80", headers=auth_headers)
         assert resp.status_code == 200
         data = resp.json()
         assert data["status"] == "simulation_complete"
@@ -202,12 +221,12 @@ class TestMOQTrap:
         assert data["needed_qty"] == 80
         assert len(data["logs"]) > 0
 
-    def test_moq_trap_unknown_part(self, client):
-        resp = client.post("/api/simulate/moq-trap?part_id=NOPE&needed_qty=10")
+    def test_moq_trap_unknown_part(self, client, auth_headers):
+        resp = client.post("/api/simulate/moq-trap?part_id=NOPE&needed_qty=10", headers=auth_headers)
         assert resp.status_code == 404
 
-    def test_moq_trap_has_recommendation(self, client):
-        resp = client.post("/api/simulate/moq-trap?part_id=LED-201&needed_qty=80")
+    def test_moq_trap_has_recommendation(self, client, auth_headers):
+        resp = client.post("/api/simulate/moq-trap?part_id=LED-201&needed_qty=80", headers=auth_headers)
         data = resp.json()
         assert data["recommendation"] in ("BUY_MOQ", "SMALL_LOT", "WAIT")
         assert data["moq"] >= 1
@@ -215,8 +234,8 @@ class TestMOQTrap:
 
 
 class TestMilitarySurge:
-    def test_military_surge_returns_success(self, client):
-        resp = client.post("/api/simulate/military-surge")
+    def test_military_surge_returns_success(self, client, auth_headers):
+        resp = client.post("/api/simulate/military-surge", headers=auth_headers)
         assert resp.status_code == 200
         data = resp.json()
         assert data["status"] == "simulation_complete"
@@ -224,16 +243,16 @@ class TestMilitarySurge:
         assert data["new_qty"] == data["original_qty"] * 2
         assert len(data["logs"]) > 0
 
-    def test_military_surge_has_ring_fencing(self, client):
-        resp = client.post("/api/simulate/military-surge")
+    def test_military_surge_has_ring_fencing(self, client, auth_headers):
+        resp = client.post("/api/simulate/military-surge", headers=auth_headers)
         data = resp.json()
         assert isinstance(data["ring_fenced_parts"], list)
         assert isinstance(data["displaced_orders"], list)
 
 
 class TestSemiconductorAllocation:
-    def test_semiconductor_allocation_returns_success(self, client):
-        resp = client.post("/api/simulate/semiconductor-allocation?part_id=MCU-241&capacity_reduction_pct=60")
+    def test_semiconductor_allocation_returns_success(self, client, auth_headers):
+        resp = client.post("/api/simulate/semiconductor-allocation?part_id=MCU-241&capacity_reduction_pct=60", headers=auth_headers)
         assert resp.status_code == 200
         data = resp.json()
         assert data["status"] == "simulation_complete"
@@ -242,20 +261,20 @@ class TestSemiconductorAllocation:
         assert data["reduced_capacity"] < data["original_capacity"]
         assert len(data["logs"]) > 0
 
-    def test_semiconductor_allocation_unknown_part(self, client):
-        resp = client.post("/api/simulate/semiconductor-allocation?part_id=NOPE")
+    def test_semiconductor_allocation_unknown_part(self, client, auth_headers):
+        resp = client.post("/api/simulate/semiconductor-allocation?part_id=NOPE", headers=auth_headers)
         assert resp.status_code == 404
 
-    def test_semiconductor_allocation_has_product_mix(self, client):
-        resp = client.post("/api/simulate/semiconductor-allocation?part_id=MCU-241")
+    def test_semiconductor_allocation_has_product_mix(self, client, auth_headers):
+        resp = client.post("/api/simulate/semiconductor-allocation?part_id=MCU-241", headers=auth_headers)
         data = resp.json()
         assert isinstance(data["affected_products"], list)
         assert isinstance(data["product_mix_recommendation"], list)
 
 
 class TestSeasonalRamp:
-    def test_seasonal_ramp_returns_success(self, client):
-        resp = client.post("/api/simulate/seasonal-ramp?deviation_pct=40")
+    def test_seasonal_ramp_returns_success(self, client, auth_headers):
+        resp = client.post("/api/simulate/seasonal-ramp?deviation_pct=40", headers=auth_headers)
         assert resp.status_code == 200
         data = resp.json()
         assert data["status"] == "simulation_complete"
@@ -263,8 +282,8 @@ class TestSeasonalRamp:
         assert data["forecast_deviation_pct"] == 40.0
         assert len(data["logs"]) > 0
 
-    def test_seasonal_ramp_has_affected_products(self, client):
-        resp = client.post("/api/simulate/seasonal-ramp?deviation_pct=40")
+    def test_seasonal_ramp_has_affected_products(self, client, auth_headers):
+        resp = client.post("/api/simulate/seasonal-ramp?deviation_pct=40", headers=auth_headers)
         data = resp.json()
         assert isinstance(data["affected_products"], list)
         assert isinstance(data["pre_positioned_parts"], list)

@@ -9,11 +9,12 @@ import asyncio
 import os
 import threading
 from datetime import datetime, timedelta, timezone
-from typing import Any, Optional, Union
+from typing import Any, Union
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.orm import Session
 
+from auth import require_role
 from agents.aura import detect_demand_spike
 from agents.core_guard import calculate_blast_radius, calculate_net_requirements, ring_fence_inventory
 from agents.data_integrity import run_full_integrity_check
@@ -36,6 +37,7 @@ from database.models import (
     Supplier,
     SupplierContract,
     SupplierRegion,
+    User,
 )
 from rate_limit import limiter
 from schemas import (
@@ -112,6 +114,7 @@ async def simulate_demand_spike(
     sku: str = "FL-001-T",
     multiplier: float = Query(default=3.0, ge=1.0, le=100.0, description="Demand multiplier (1x–100x)"),
     db: Session = Depends(get_db),
+    current_user: User = Depends(require_role("operator", "approver", "admin")),
 ) -> dict[str, Any]:
     """
     Scenario A: Simulate a demand spike.
@@ -220,6 +223,7 @@ async def simulate_supply_shock(
     request: Request,
     supplier_name: str = "CREE Inc.",
     db: Session = Depends(get_db),
+    current_user: User = Depends(require_role("operator", "approver", "admin")),
 ) -> dict[str, Any]:
     """
     Scenario B: Simulate a supplier going offline (e.g., factory fire).
@@ -353,6 +357,7 @@ async def simulate_quality_fail(
     part_id: str = "CH-231",
     batch_size: int = Query(default=150, ge=1, le=10000, description="Batch size (1–10,000)"),
     db: Session = Depends(get_db),
+    current_user: User = Depends(require_role("operator", "approver", "admin")),
 ) -> dict[str, Any]:
     """
     Scenario C: Simulate a batch failing quality inspection at the dock.
@@ -399,6 +404,7 @@ async def simulate_quality_fail(
 async def simulate_cascade_failure(
     request: Request,
     db: Session = Depends(get_db),
+    current_user: User = Depends(require_role("operator", "approver", "admin")),
 ) -> dict[str, Any]:
     """
     Scenario D: Demand spike hits while CREE Inc. is already offline.
@@ -506,6 +512,7 @@ async def simulate_cascade_failure(
 async def simulate_constitution_breach(
     request: Request,
     db: Session = Depends(get_db),
+    current_user: User = Depends(require_role("operator", "approver", "admin")),
 ) -> dict[str, Any]:
     """
     Scenario E: Force a PO exceeding the $5,000 spend limit.
@@ -585,6 +592,7 @@ async def simulate_constitution_breach(
 async def simulate_full_blackout(
     request: Request,
     db: Session = Depends(get_db),
+    current_user: User = Depends(require_role("operator", "approver", "admin")),
 ) -> dict[str, Any]:
     """
     Scenario F: ALL suppliers go offline. No PO can be generated.
@@ -689,6 +697,7 @@ async def simulate_slow_bleed(
     request: Request,
     part_id: str = Query(default="CH-231", description="Part ID to simulate slow bleed on"),
     db: Session = Depends(get_db),
+    current_user: User = Depends(require_role("operator", "approver", "admin")),
 ) -> dict[str, Any]:
     """
     Scenario G: Simulate a gradual burn rate increase (Slow Bleed).
@@ -850,6 +859,7 @@ async def simulate_slow_bleed(
 async def simulate_inventory_decay(
     request: Request,
     db: Session = Depends(get_db),
+    current_user: User = Depends(require_role("operator", "approver", "admin")),
 ) -> dict[str, Any]:
     """
     Scenario H: Inventory Decay — Ghost inventory and stale stock detection.
@@ -1069,6 +1079,7 @@ async def simulate_inventory_decay(
 async def simulate_multi_sku_contention(
     request: Request,
     db: Session = Depends(get_db),
+    current_user: User = Depends(require_role("operator", "approver", "admin")),
 ) -> dict[str, Any]:
     """
     Scenario I: Multi-SKU Contention — two products compete for shared components.
@@ -1288,6 +1299,7 @@ async def simulate_contract_exhaustion(
     request: Request,
     contract_number: str = Query(default="BPA-CREE-2026"),
     db: Session = Depends(get_db),
+    current_user: User = Depends(require_role("operator", "approver", "admin")),
 ) -> dict[str, Any]:
     """
     Scenario 10: Blanket PO is 90% consumed with months remaining.
@@ -1442,6 +1454,7 @@ async def simulate_tariff_shock(
     region: str = Query(default="CHINA"),
     increase_pct: float = Query(default=25.0, ge=1.0, le=100.0),
     db: Session = Depends(get_db),
+    current_user: User = Depends(require_role("operator", "approver", "admin")),
 ) -> dict[str, Any]:
     """
     Scenario 11: Tariff announcement on a region — costs jump overnight.
@@ -1610,6 +1623,7 @@ async def simulate_moq_trap(
     part_id: str = Query(default="LED-201"),
     needed_qty: int = Query(default=80, ge=1),
     db: Session = Depends(get_db),
+    current_user: User = Depends(require_role("operator", "approver", "admin")),
 ) -> dict[str, Any]:
     """
     Scenario 12: Need fewer units than MOQ — buy excess or pay small-lot premium?
@@ -1750,6 +1764,7 @@ async def simulate_moq_trap(
 async def simulate_military_surge(
     request: Request,
     db: Session = Depends(get_db),
+    current_user: User = Depends(require_role("operator", "approver", "admin")),
 ) -> dict[str, Any]:
     """
     Scenario 13: VIP military order doubles, 21-day deadline.
@@ -1898,6 +1913,7 @@ async def simulate_semiconductor_allocation(
     capacity_reduction_pct: float = Query(default=60.0, ge=10.0, le=90.0),
     allocation_weeks: int = Query(default=26, ge=4, le=52),
     db: Session = Depends(get_db),
+    current_user: User = Depends(require_role("operator", "approver", "admin")),
 ) -> dict[str, Any]:
     """
     Scenario 14: Supplier announces allocation — capacity drops significantly.
@@ -2050,6 +2066,7 @@ async def simulate_seasonal_ramp(
     request: Request,
     deviation_pct: float = Query(default=40.0, ge=10.0, le=100.0),
     db: Session = Depends(get_db),
+    current_user: User = Depends(require_role("operator", "approver", "admin")),
 ) -> dict[str, Any]:
     """
     Scenario 15: Peak season orders arrive above forecast.
@@ -2160,6 +2177,7 @@ async def simulate_demand_horizon(
     demand_qty: int = Query(default=500, description="Quantity demanded"),
     days_until_needed: int = Query(default=30, description="Days until demand must be fulfilled"),
     db: Session = Depends(get_db),
+    current_user: User = Depends(require_role("operator", "approver", "admin")),
 ) -> dict[str, Any]:
     """
     PRD §10: Classify a demand signal into one of three horizon zones
@@ -2194,12 +2212,9 @@ async def simulate_demand_horizon(
 async def simulate_reset(
     request: Request,
     db: Session = Depends(get_db),
-    x_reset_token: Optional[str] = Header(None),
+    current_user: User = Depends(require_role("admin")),
 ) -> dict[str, Any]:
     """Reset the database to a clean FL-001 state for fresh demos."""
-    expected_token = os.getenv("RESET_TOKEN")
-    if expected_token and x_reset_token != expected_token:
-        raise HTTPException(status_code=403, detail="Invalid or missing X-Reset-Token header.")
 
     if not _reset_lock.acquire(blocking=False):
         raise HTTPException(status_code=409, detail="A reset is already in progress. Please wait.")

@@ -5,8 +5,9 @@ Inventory & Supplier REST endpoints.
 from fastapi import APIRouter, Depends, Request
 from sqlalchemy.orm import Session
 
+from auth import get_current_user
 from database.connection import get_db
-from database.models import Inventory, Part, Supplier
+from database.models import Inventory, Part, Supplier, User
 from rate_limit import limiter
 from schemas import InventoryItemResponse, SupplierResponse
 
@@ -15,7 +16,7 @@ router = APIRouter(prefix="/api", tags=["inventory"])
 
 @router.get("/inventory", response_model=list[InventoryItemResponse])
 @limiter.limit("60/minute")
-def get_inventory(request: Request, db: Session = Depends(get_db)) -> list[dict]:
+def get_inventory(request: Request, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)) -> list[dict]:
     """Return current inventory levels for all parts."""
     records = (
         db.query(Inventory, Part)
@@ -41,7 +42,7 @@ def get_inventory(request: Request, db: Session = Depends(get_db)) -> list[dict]
 
 @router.get("/suppliers", response_model=list[SupplierResponse])
 @limiter.limit("60/minute")
-def get_suppliers(request: Request, db: Session = Depends(get_db)) -> list[dict]:
+def get_suppliers(request: Request, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)) -> list[dict]:
     """Return all suppliers with their status."""
     suppliers = db.query(Supplier).all()
     return [

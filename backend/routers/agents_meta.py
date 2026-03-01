@@ -5,8 +5,10 @@ Agent metadata & DB viewer REST endpoints.
 from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy.orm import Session, joinedload
 
+from auth import get_current_user
 from database.connection import get_db
 from database.models import (
+    User,
     AgentLog,
     AlternateSupplier,
     BOMEntry,
@@ -46,7 +48,7 @@ router = APIRouter(prefix="/api", tags=["agents"])
 
 @router.get("/agents", response_model=list[AgentMetadata])
 @limiter.limit("60/minute")
-def get_agents(request: Request) -> list[dict]:
+def get_agents(request: Request, current_user: User = Depends(get_current_user)) -> list[dict]:
     """Return metadata for all agents in the system."""
     return [
         {
@@ -225,6 +227,7 @@ def db_suppliers(
     db: Session = Depends(get_db),
     limit: int = Query(default=100, ge=1, le=1000),
     offset: int = Query(default=0, ge=0),
+    current_user: User = Depends(get_current_user),
 ) -> list[dict]:
     """Raw suppliers table dump."""
     rows = db.query(Supplier).order_by(Supplier.id).offset(offset).limit(limit).all()
@@ -249,6 +252,7 @@ def db_parts(
     db: Session = Depends(get_db),
     limit: int = Query(default=100, ge=1, le=1000),
     offset: int = Query(default=0, ge=0),
+    current_user: User = Depends(get_current_user),
 ) -> list[dict]:
     """Raw parts table dump."""
     rows = db.query(Part).options(joinedload(Part.supplier)).order_by(Part.id).offset(offset).limit(limit).all()
@@ -269,6 +273,7 @@ def db_inventory(
     db: Session = Depends(get_db),
     limit: int = Query(default=100, ge=1, le=1000),
     offset: int = Query(default=0, ge=0),
+    current_user: User = Depends(get_current_user),
 ) -> list[dict]:
     """Raw inventory table dump."""
     rows = db.query(Inventory).options(joinedload(Inventory.part)).order_by(Inventory.id).offset(offset).limit(limit).all()
@@ -290,6 +295,7 @@ def db_bom(
     db: Session = Depends(get_db),
     limit: int = Query(default=100, ge=1, le=1000),
     offset: int = Query(default=0, ge=0),
+    current_user: User = Depends(get_current_user),
 ) -> list[dict]:
     """Raw BOM table dump."""
     rows = db.query(BOMEntry).options(joinedload(BOMEntry.parent), joinedload(BOMEntry.component)).order_by(BOMEntry.id).offset(offset).limit(limit).all()
@@ -309,6 +315,7 @@ def db_orders(
     db: Session = Depends(get_db),
     limit: int = Query(default=100, ge=1, le=1000),
     offset: int = Query(default=0, ge=0),
+    current_user: User = Depends(get_current_user),
 ) -> list[dict]:
     """Raw purchase_orders table dump."""
     rows = db.query(PurchaseOrder).options(joinedload(PurchaseOrder.part), joinedload(PurchaseOrder.supplier)).order_by(PurchaseOrder.id).offset(offset).limit(limit).all()
@@ -331,6 +338,7 @@ def db_demand_forecast(
     db: Session = Depends(get_db),
     limit: int = Query(default=100, ge=1, le=1000),
     offset: int = Query(default=0, ge=0),
+    current_user: User = Depends(get_current_user),
 ) -> list[dict]:
     """Raw demand_forecast table dump."""
     rows = db.query(DemandForecast).options(joinedload(DemandForecast.part)).order_by(DemandForecast.id).offset(offset).limit(limit).all()
@@ -353,6 +361,7 @@ def db_quality_inspections(
     db: Session = Depends(get_db),
     limit: int = Query(default=100, ge=1, le=1000),
     offset: int = Query(default=0, ge=0),
+    current_user: User = Depends(get_current_user),
 ) -> list[dict]:
     """Raw quality_inspections table dump."""
     rows = db.query(QualityInspection).options(joinedload(QualityInspection.part)).order_by(QualityInspection.id).offset(offset).limit(limit).all()
@@ -372,6 +381,7 @@ def db_agent_logs(
     db: Session = Depends(get_db),
     limit: int = Query(default=200, ge=1, le=1000),
     offset: int = Query(default=0, ge=0),
+    current_user: User = Depends(get_current_user),
 ) -> list[dict]:
     """Raw agent_logs table dump."""
     rows = db.query(AgentLog).order_by(AgentLog.id.desc()).offset(offset).limit(limit).all()
@@ -390,6 +400,7 @@ def db_sales_orders(
     db: Session = Depends(get_db),
     limit: int = Query(default=100, ge=1, le=1000),
     offset: int = Query(default=0, ge=0),
+    current_user: User = Depends(get_current_user),
 ) -> list[dict]:
     """Raw sales_orders table dump."""
     rows = db.query(SalesOrder).options(joinedload(SalesOrder.part)).order_by(SalesOrder.id).offset(offset).limit(limit).all()
@@ -410,6 +421,7 @@ def db_ring_fence_audit(
     db: Session = Depends(get_db),
     limit: int = Query(default=100, ge=1, le=1000),
     offset: int = Query(default=0, ge=0),
+    current_user: User = Depends(get_current_user),
 ) -> list[dict]:
     """Raw ring_fence_audit table dump."""
     rows = db.query(RingFenceAuditLog).order_by(RingFenceAuditLog.id.desc()).offset(offset).limit(limit).all()
@@ -430,6 +442,7 @@ def db_inventory_health(
     db: Session = Depends(get_db),
     limit: int = Query(default=100, ge=1, le=1000),
     offset: int = Query(default=0, ge=0),
+    current_user: User = Depends(get_current_user),
 ) -> list[dict]:
     """Raw inventory_health table dump."""
     rows = db.query(InventoryHealthRecord).order_by(InventoryHealthRecord.id.desc()).offset(offset).limit(limit).all()
@@ -448,6 +461,7 @@ def db_supplier_contracts(
     db: Session = Depends(get_db),
     limit: int = Query(default=100, ge=1, le=1000),
     offset: int = Query(default=0, ge=0),
+    current_user: User = Depends(get_current_user),
 ) -> list[dict]:
     """Raw supplier_contracts table dump."""
     rows = db.query(SupplierContract).options(joinedload(SupplierContract.supplier)).order_by(SupplierContract.id).offset(offset).limit(limit).all()
@@ -473,6 +487,7 @@ def db_scheduled_releases(
     db: Session = Depends(get_db),
     limit: int = Query(default=100, ge=1, le=1000),
     offset: int = Query(default=0, ge=0),
+    current_user: User = Depends(get_current_user),
 ) -> list[dict]:
     """Raw scheduled_releases table dump."""
     rows = db.query(ScheduledRelease).options(joinedload(ScheduledRelease.contract), joinedload(ScheduledRelease.part)).order_by(ScheduledRelease.id).offset(offset).limit(limit).all()
@@ -495,6 +510,7 @@ def db_alternate_suppliers(
     db: Session = Depends(get_db),
     limit: int = Query(default=100, ge=1, le=1000),
     offset: int = Query(default=0, ge=0),
+    current_user: User = Depends(get_current_user),
 ) -> list[dict]:
     """Raw alternate_suppliers table dump."""
     rows = (

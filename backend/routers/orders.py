@@ -9,8 +9,9 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session, joinedload
 from starlette.concurrency import run_in_threadpool
 
+from auth import get_current_user, require_role
 from database.connection import get_db
-from database.models import AgentLog, OrderStatus, Part, PurchaseOrder, Supplier
+from database.models import AgentLog, OrderStatus, Part, PurchaseOrder, Supplier, User
 from rate_limit import limiter
 from schemas import CreatePurchaseOrderRequest, PurchaseOrderResponse, UpdateOrderStatusRequest
 
@@ -22,7 +23,7 @@ FINANCIAL_CONSTITUTION_MAX_SPEND = 5000.00
 
 @router.get("/orders", response_model=list[PurchaseOrderResponse])
 @limiter.limit("60/minute")
-def get_orders(request: Request, db: Session = Depends(get_db)) -> list[dict]:
+def get_orders(request: Request, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)) -> list[dict]:
     """Return all purchase orders."""
     orders = (
         db.query(PurchaseOrder)
@@ -52,6 +53,7 @@ def create_order(
     request: Request,
     body: CreatePurchaseOrderRequest,
     db: Session = Depends(get_db),
+    current_user: User = Depends(require_role("operator", "approver", "admin")),
 ) -> dict:
     """
     Manually create a purchase order.
@@ -110,6 +112,7 @@ async def update_order_status(
     body: UpdateOrderStatusRequest,
     request: Request,
     db: Session = Depends(get_db),
+    current_user: User = Depends(require_role("approver", "admin")),
 ) -> dict:
     """
     Approve or reject a purchase order that is pending human approval.

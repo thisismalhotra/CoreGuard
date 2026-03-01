@@ -3,8 +3,9 @@
 from fastapi import APIRouter, Depends, Request
 from sqlalchemy.orm import Session
 
+from auth import get_current_user
 from database.connection import get_db
-from database.models import Inventory, Part
+from database.models import Inventory, Part, User
 from rate_limit import limiter
 
 router = APIRouter(prefix="/api", tags=["data-integrity"])
@@ -12,7 +13,7 @@ router = APIRouter(prefix="/api", tags=["data-integrity"])
 
 @router.get("/data-integrity/warnings")
 @limiter.limit("60/minute")
-def get_data_integrity_warnings(request: Request, db: Session = Depends(get_db)) -> list[dict]:
+def get_data_integrity_warnings(request: Request, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)) -> list[dict]:
     """Return inventory items that have integrity concerns."""
     warnings: list[dict] = []
     rows = (
