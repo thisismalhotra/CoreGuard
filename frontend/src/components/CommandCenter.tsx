@@ -17,8 +17,10 @@ import { InventoryCharts } from "./InventoryCharts";
 import { AnalyticsCharts } from "./AnalyticsCharts";
 import { ThemeToggle } from "./ThemeToggle";
 import { OnboardingModal } from "./OnboardingModal";
+import { useAuth, hasRole } from "@/lib/auth";
 
 export function CommandCenter() {
+  const { user, loading, logout } = useAuth();
   const [logs, setLogs] = useState<AgentLog[]>([]);
   const [inventory, setInventory] = useState<InventoryItem[]>([]);
   const [kpis, setKPIs] = useState<KPIs | null>(null);
@@ -27,6 +29,14 @@ export function CommandCenter() {
   const [reconnectAttempt, setReconnectAttempt] = useState(0);
   const [backendError, setBackendError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState("logs");
+  const [analyticsRefreshKey, setAnalyticsRefreshKey] = useState(0);
+
+  const handleTabChange = (tab: string) => {
+    setActiveTab(tab);
+    if (tab === "analytics") {
+      setAnalyticsRefreshKey((k) => k + 1);
+    }
+  };
   const [integrityWarnings, setIntegrityWarnings] = useState<Array<{
     part_id: string; description: string; severity: string;
     issue: string; detail: string; action: string;
@@ -155,6 +165,32 @@ export function CommandCenter() {
             </Button>
           </Link>
           <ThemeToggle />
+          {user && (
+            <div className="flex items-center gap-2">
+              {user.picture && (
+                <img
+                  src={user.picture}
+                  alt={user.name}
+                  className="h-7 w-7 rounded-full"
+                  referrerPolicy="no-referrer"
+                />
+              )}
+              <span className="text-xs text-muted-foreground hidden sm:inline">
+                {user.name}
+              </span>
+              <span className="text-[10px] font-medium uppercase bg-muted px-1.5 py-0.5 rounded text-muted-foreground">
+                {user.role}
+              </span>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="text-xs text-muted-foreground hover:text-foreground h-7 px-2"
+                onClick={logout}
+              >
+                Logout
+              </Button>
+            </div>
+          )}
           <div className="flex items-center gap-2">
             {reconnecting ? (
               <>
@@ -209,7 +245,7 @@ export function CommandCenter() {
       </div>
 
       {/* Tabbed Content */}
-      <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+      <Tabs value={activeTab} onValueChange={handleTabChange} className="w-full">
         <div className="overflow-x-auto scrollbar-hide">
           <TabsList className="bg-card border border-border inline-flex w-max min-w-full">
             <TabsTrigger value="status" className="data-[state=active]:bg-muted gap-1.5">
@@ -228,10 +264,12 @@ export function CommandCenter() {
               <Shield className="h-3.5 w-3.5" />
               Digital Dock
             </TabsTrigger>
-            <TabsTrigger value="godmode" className="data-[state=active]:bg-muted gap-1.5">
-              <Zap className="h-3.5 w-3.5" />
-              God Mode
-            </TabsTrigger>
+            {hasRole(user, "operator", "approver", "admin") && (
+              <TabsTrigger value="godmode" className="data-[state=active]:bg-muted gap-1.5">
+                <Zap className="h-3.5 w-3.5" />
+                God Mode
+              </TabsTrigger>
+            )}
           </TabsList>
         </div>
 
@@ -265,7 +303,7 @@ export function CommandCenter() {
 
         <TabsContent value="analytics" className="mt-4">
           <InventoryCharts items={inventory} loading={!inventory.length && !backendError} />
-          <AnalyticsCharts />
+          <AnalyticsCharts refreshKey={analyticsRefreshKey} />
         </TabsContent>
 
         <TabsContent value="logs" className="mt-4">
@@ -280,12 +318,15 @@ export function CommandCenter() {
           <DigitalDock />
         </TabsContent>
 
-        <TabsContent value="godmode" className="mt-4">
-          <GodMode
-            onSimulationComplete={refreshData}
-            onSwitchToLogs={() => setActiveTab("logs")}
-          />
-        </TabsContent>
+        {hasRole(user, "operator", "approver", "admin") && (
+          <TabsContent value="godmode" className="mt-4">
+            <GodMode
+              onSimulationComplete={refreshData}
+              onSwitchToLogs={() => setActiveTab("logs")}
+              userRole={user?.role}
+            />
+          </TabsContent>
+        )}
       </Tabs>
     </div>
   );

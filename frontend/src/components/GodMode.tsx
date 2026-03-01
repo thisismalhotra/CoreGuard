@@ -31,9 +31,11 @@ type Scenario = {
 export function GodMode({
   onSimulationComplete,
   onSwitchToLogs,
+  userRole,
 }: {
   onSimulationComplete: () => void;
   onSwitchToLogs?: () => void;
+  userRole?: string;
 }) {
   const [results, setResults] = useState<Record<string, ScenarioResult>>({});
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
@@ -545,18 +547,20 @@ export function GodMode({
         )}
       </div>
 
-      {/* Reset Button */}
-      <div className="flex justify-end pt-2 border-t border-border">
-        <Button
-          variant="outline"
-          className="border-input text-muted-foreground hover:text-foreground hover:border-foreground/30 gap-2 text-xs"
-          onClick={handleReset}
-          disabled={isAnyRunning || resetting}
-        >
-          <RefreshCw className={`h-3.5 w-3.5 ${resetting ? "animate-spin" : ""}`} />
-          {resetting ? "Resetting..." : "Reset Simulation"}
-        </Button>
-      </div>
+      {/* Reset Button — Admin only */}
+      {userRole === "admin" && (
+        <div className="flex justify-end pt-2 border-t border-border">
+          <Button
+            variant="outline"
+            className="border-input text-muted-foreground hover:text-foreground hover:border-foreground/30 gap-2 text-xs"
+            onClick={handleReset}
+            disabled={isAnyRunning || resetting}
+          >
+            <RefreshCw className={`h-3.5 w-3.5 ${resetting ? "animate-spin" : ""}`} />
+            {resetting ? "Resetting..." : "Reset Simulation"}
+          </Button>
+        </div>
+      )}
     </div>
   );
 }

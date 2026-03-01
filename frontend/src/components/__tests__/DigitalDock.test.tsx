@@ -66,6 +66,17 @@ vi.mock("sonner", () => ({
   toast: { success: vi.fn(), error: vi.fn() },
 }));
 
+vi.mock("@/lib/auth", () => ({
+  useAuth: () => ({
+    user: { id: 1, email: "admin@test.com", name: "Admin", role: "admin", picture: null, is_active: true },
+    token: "fake-token",
+    loading: false,
+    logout: vi.fn(),
+  }),
+  hasRole: (user: { role: string } | null, ...roles: string[]) =>
+    user !== null && roles.includes(user.role),
+}));
+
 const mockedGetQualityInspections = vi.mocked(api.getQualityInspections);
 const mockedGetOrders = vi.mocked(api.getOrders);
 const mockedUpdateOrderStatus = vi.mocked(api.updateOrderStatus);
