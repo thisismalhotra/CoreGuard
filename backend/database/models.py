@@ -380,3 +380,23 @@ class AgentLog(Base):
     agent = Column(String(50), nullable=False)
     message = Column(Text, nullable=False)
     log_type = Column(String(20), nullable=False, default="info")  # info|warning|success|error
+
+
+class User(Base):
+    """Authenticated user with role-based access control."""
+
+    __tablename__ = "users"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    google_id = Column(String(255), unique=True, nullable=False)
+    email = Column(String(255), unique=True, nullable=False)
+    name = Column(String(255), nullable=False)
+    picture = Column(Text, nullable=True)
+    role = Column(String(20), nullable=False, default="viewer")
+    is_active = Column(Boolean, nullable=False, default=True)
+    created_at = Column(
+        DateTime, nullable=False, default=lambda: datetime.now(timezone.utc)
+    )
+    last_login = Column(
+        DateTime, nullable=False, default=lambda: datetime.now(timezone.utc)
+    )
