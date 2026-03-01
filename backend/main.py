@@ -20,7 +20,7 @@ from starlette.middleware.sessions import SessionMiddleware
 
 from database.connection import init_db
 from rate_limit import limiter
-from routers import agents_meta, auth as auth_router, inventory, kpis, orders, simulations
+from routers import admin as admin_router, agents_meta, auth as auth_router, inventory, kpis, orders, simulations
 from routers.data_integrity import router as data_integrity_router
 
 logger = logging.getLogger(__name__)
@@ -56,6 +56,7 @@ app.add_middleware(
 )
 
 # --- Register routers ---
+app.include_router(admin_router.router)
 app.include_router(auth_router.router)
 app.include_router(inventory.router)
 app.include_router(orders.router)
