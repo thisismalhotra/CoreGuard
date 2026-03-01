@@ -1,5 +1,5 @@
 """
-Data Integrity Agent — Ghost Inventory & Suspect Inventory Detection.
+Auditor Agent — Ghost Inventory & Suspect Inventory Detection.
 
 PRD §11: Ensures inventory data is trustworthy by detecting anomalies:
 
@@ -32,7 +32,7 @@ from database.models import (
     InventoryHealthRecord,
 )
 
-AGENT_NAME = "Data-Integrity"
+AGENT_NAME = "Auditor"
 
 # Thresholds (PRD §11)
 GHOST_INVENTORY_DAYS = 14    # No consumption for 14+ days despite scheduled demand

@@ -15,11 +15,11 @@ const LOG_TYPE_STYLES: Record<string, string> = {
 };
 
 const AGENT_COLORS: Record<string, string> = {
-  Aura: "bg-purple-600",
-  Dispatcher: "bg-cyan-600",
-  "Core-Guard": "bg-blue-600",
-  "Ghost-Writer": "bg-emerald-600",
-  "Eagle-Eye": "bg-orange-600",
+  Scout: "bg-purple-600",
+  Router: "bg-cyan-600",
+  Solver: "bg-blue-600",
+  Buyer: "bg-emerald-600",
+  Inspector: "bg-orange-600",
   System: "bg-gray-600",
 };
 

@@ -60,18 +60,18 @@ The MVP runs fully without these — LLM and vector DB integrations are placehol
 ## Agent Chain
 
 ```
-Aura → Dispatcher → Core-Guard → Ghost-Writer
-                                       ↑
-                    Eagle-Eye ──────────┘ (on quality failure)
+Scout → Router → Solver → Buyer
+                              ↑
+               Inspector ─────┘ (on quality failure)
 ```
 
 | Agent        | Role                        | Key Logic                                              |
 |--------------|-----------------------------|---------------------------------------------------------|
-| Aura         | Demand Sensing              | Fires DEMAND_SPIKE when actual > forecast x 1.2        |
-| Dispatcher   | Triage & Prioritisation     | Scores components by criticality + lead time + gap      |
-| Core-Guard   | MRP Logic                   | BOM explosion, net requirements, REALLOCATE vs BUY      |
-| Ghost-Writer | Procurement & PO Generation | Validates spend vs $5k constitution, generates PDF POs  |
-| Eagle-Eye    | Quality Inspection          | Sensor scans against CAD specs, quarantine on failure    |
+| Scout        | Demand Sensing              | Fires DEMAND_SPIKE when actual > forecast x 1.2        |
+| Router       | Triage & Prioritisation     | Scores components by criticality + lead time + gap      |
+| Solver       | MRP Logic                   | BOM explosion, net requirements, REALLOCATE vs BUY      |
+| Buyer        | Procurement & PO Generation | Validates spend vs $5k constitution, generates PDF POs  |
+| Inspector    | Quality Inspection          | Sensor scans against CAD specs, quarantine on failure    |
 
 See [AGENTS.md](docs/AGENTS.md) for detailed documentation on each agent.
 
@@ -89,9 +89,9 @@ The simulation engine supports 6 chaos scenarios plus a reset:
 
 | Scenario             | What Happens                                          | Tests                                    |
 |----------------------|-------------------------------------------------------|------------------------------------------|
-| 300% Demand Spike    | Aura detects surge, full agent chain executes          | Normal MRP + PO flow                     |
+| 300% Demand Spike    | Scout detects surge, full agent chain executes         | Normal MRP + PO flow                     |
 | Supplier Fire        | CREE Inc. goes offline, emergency reorder from alternates | Supplier failover                       |
-| Quality Fail         | CH-231 batch fails inspection, quarantine + reorder    | Eagle-Eye inspection pipeline            |
+| Quality Fail         | CH-231 batch fails inspection, quarantine + reorder    | Inspector inspection pipeline            |
 | Cascade Failure      | 500% spike + CREE Inc. offline simultaneously          | Multi-crisis coordination                |
 | Constitution Breach  | 800% spike forces POs over $5k limit                   | Financial guardrail enforcement          |
 | Full Blackout        | All 22 suppliers offline + demand spike                | System halt + human escalation           |
@@ -126,11 +126,11 @@ CoreGuard/
 │   ├── main.py                 # FastAPI + Socket.io server (all endpoints)
 │   ├── seed.py                 # FL-001 dataset seeder
 │   ├── agents/
-│   │   ├── aura.py             # Demand sensing
-│   │   ├── dispatcher.py       # Triage & prioritisation
-│   │   ├── core_guard.py       # MRP logic
-│   │   ├── ghost_writer.py     # PO generation + constitution
-│   │   └── eagle_eye.py        # Quality inspection
+│   │   ├── aura.py             # Scout — Demand sensing
+│   │   ├── dispatcher.py       # Router — Triage & prioritisation
+│   │   ├── core_guard.py       # Solver — MRP logic
+│   │   ├── ghost_writer.py     # Buyer — PO generation + constitution
+│   │   └── eagle_eye.py        # Inspector — Quality inspection
 │   ├── database/
 │   │   ├── models.py           # SQLAlchemy ORM (8 tables)
 │   │   └── connection.py       # DB session management

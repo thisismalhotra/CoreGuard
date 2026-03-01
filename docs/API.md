@@ -48,7 +48,7 @@ Returns all purchase orders, newest first.
     "total_cost": 1875.00,
     "status": "APPROVED",
     "created_at": "2026-02-21T12:00:00+00:00",
-    "triggered_by": "Core-Guard"
+    "triggered_by": "Solver"
   }
 ]
 ```
@@ -85,7 +85,7 @@ Returns recent Glass Box agent logs (persisted entries). Oldest first for displa
 [
   {
     "timestamp": "2026-02-21T12:00:00+00:00",
-    "agent": "Aura",
+    "agent": "Scout",
     "message": "Scanning demand signal for FL-001-T...",
     "type": "info"
   }
@@ -142,13 +142,13 @@ Returns metadata for all 5 agents: name, role, description, trigger, inputs, out
 ```json
 [
   {
-    "name": "Aura",
+    "name": "Scout",
     "role": "Demand Sensing Agent",
     "description": "Monitors real-time sales data...",
     "trigger": "Incoming demand data exceeds forecast by 20%+",
     "inputs": ["SKU identifier", "New actual demand quantity", "Demand forecast table"],
     "outputs": ["DEMAND_SPIKE event", "Spike multiplier", "Glass Box logs"],
-    "downstream": "Dispatcher",
+    "downstream": "Router",
     "constitution": null,
     "rules": ["Stateless — reads DB state, never caches", "..."],
     "color": "purple",
@@ -183,7 +183,7 @@ All simulation endpoints trigger the full agent chain and stream logs via Socket
 
 **Scenario A: Demand Spike**
 
-Triggers: Aura → Dispatcher → Core-Guard → Ghost-Writer
+Triggers: Scout → Router → Solver → Buyer
 
 | Parameter    | Type   | Default    | Description                |
 |-------------|--------|------------|----------------------------|
@@ -219,20 +219,20 @@ Disables a supplier and triggers emergency reorders from the best alternate.
 |----------------|--------|----------|--------------------------|
 | `supplier_name` | string | CREE Inc. | Supplier to take offline  |
 
-**Agent chain:** System → Core-Guard (impact assessment) → Ghost-Writer (emergency POs)
+**Agent chain:** System → Solver (impact assessment) → Buyer (emergency POs)
 
 ### `POST /api/simulate/quality-fail`
 
 **Scenario C: Quality Failure**
 
-Eagle-Eye inspects an incoming batch, forces failure, quarantines, and triggers emergency reorder.
+Inspector inspects an incoming batch, forces failure, quarantines, and triggers emergency reorder.
 
 | Parameter    | Type   | Default | Description              |
 |-------------|--------|---------|--------------------------|
 | `part_id`   | string | CH-231  | Part to inspect           |
 | `batch_size` | int    | 150     | Units in the shipment     |
 
-**Agent chain:** Eagle-Eye → Ghost-Writer (emergency reorder)
+**Agent chain:** Inspector → Buyer (emergency reorder)
 
 ### `POST /api/simulate/cascade-failure`
 
@@ -242,27 +242,27 @@ CREE Inc. goes offline at the same moment a 500% demand spike hits FL-001-T. Tes
 
 No parameters. Automatically reroutes orders to the best alternate supplier.
 
-**Agent chain:** System → Aura → Dispatcher → Core-Guard → Ghost-Writer (with supplier rerouting)
+**Agent chain:** System → Scout → Router → Solver → Buyer (with supplier rerouting)
 
 ### `POST /api/simulate/constitution-breach`
 
 **Scenario E: Constitution Breach**
 
-800% demand spike forces POs that exceed the $5,000 financial guardrail. Ghost-Writer blocks them with `PENDING_APPROVAL`.
+800% demand spike forces POs that exceed the $5,000 financial guardrail. Buyer blocks them with `PENDING_APPROVAL`.
 
 No parameters.
 
-**Agent chain:** System → Aura → Dispatcher → Core-Guard → Ghost-Writer (constitution enforcement)
+**Agent chain:** System → Scout → Router → Solver → Buyer (constitution enforcement)
 
 ### `POST /api/simulate/full-blackout`
 
 **Scenario F: Full Blackout**
 
-All 22 suppliers go offline, then a 400% demand spike hits. Core-Guard exhausts every procurement path and escalates a CRITICAL alert requiring human intervention.
+All 22 suppliers go offline, then a 400% demand spike hits. Solver exhausts every procurement path and escalates a CRITICAL alert requiring human intervention.
 
 No parameters.
 
-**Agent chain:** System → Aura → Dispatcher → Core-Guard → System (escalation)
+**Agent chain:** System → Scout → Router → Solver → System (escalation)
 
 ### `POST /api/simulate/reset`
 

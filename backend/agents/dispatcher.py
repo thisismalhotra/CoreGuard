@@ -1,9 +1,9 @@
 """
-Dispatcher Agent — Triage & Prioritisation.
+Router Agent — Triage & Prioritisation.
 
-Sits between Aura and Core-Guard. When multiple SKUs experience demand spikes
-simultaneously (or multiple shortages compound), the Dispatcher triages them
-by criticality and lead-time sensitivity before handing off to Core-Guard.
+Sits between Scout and Solver. When multiple SKUs experience demand spikes
+simultaneously (or multiple shortages compound), the Router triages them
+by criticality and lead-time sensitivity before handing off to Solver.
 
 This prevents the system from processing low-priority parts first while
 critical components wait in the queue.
@@ -24,7 +24,7 @@ from database.models import (
     Part,
 )
 
-AGENT_NAME = "Dispatcher"
+AGENT_NAME = "Router"
 
 # Priority weights — higher = processed first
 CRITICALITY_WEIGHT = {
@@ -52,7 +52,7 @@ def triage_demand_spike(
       1. Identify the finished good and explode its BOM.
       2. Score each component by: criticality weight + lead_time_sensitivity +
          inventory gap severity.
-      3. Return components sorted by priority (highest first) so Core-Guard
+      3. Return components sorted by priority (highest first) so Solver
          handles critical shortages before lower-priority ones.
 
     Returns:
@@ -66,7 +66,7 @@ def triage_demand_spike(
     """
     logs: list[dict[str, str]] = []
 
-    logs.append(_log(db, f"Dispatcher received spike alert: {demand_qty} units of {sku}. Initiating triage..."))
+    logs.append(_log(db, f"Router received spike alert: {demand_qty} units of {sku}. Initiating triage..."))
 
     # --- Locate the finished good ---
     part = db.query(Part).filter(Part.part_id == sku).first()
@@ -77,7 +77,7 @@ def triage_demand_spike(
     # --- BOM explosion for impact assessment ---
     bom_entries = db.query(BOMEntry).filter(BOMEntry.parent_id == part.id).all()
     if not bom_entries:
-        logs.append(_log(db, f"No BOM for {sku}. Passing through to Core-Guard.", "warning"))
+        logs.append(_log(db, f"No BOM for {sku}. Passing through to Solver.", "warning"))
         return {"sku": sku, "demand_qty": demand_qty, "priority_queue": [], "assessment": {}, "logs": logs}
 
     # --- Score each component ---
@@ -146,11 +146,11 @@ def triage_demand_spike(
         logs.append(_log(
             db,
             f"ALERT: {critical_count} CRITICAL component(s) in shortage. "
-            f"Dispatcher recommending expedited processing order to Core-Guard.",
+            f"Router recommending expedited processing order to Solver.",
             "warning",
         ))
 
-    logs.append(_log(db, "Handing prioritised queue to Core-Guard for MRP processing."))
+    logs.append(_log(db, "Handing prioritised queue to Solver for MRP processing."))
 
     # NOTE: No db.commit() here — the calling simulation endpoint owns the transaction.
     # Agents only flush() to get IDs; the single commit happens in the router.

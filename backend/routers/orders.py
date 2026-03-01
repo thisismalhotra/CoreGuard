@@ -6,7 +6,8 @@ import uuid
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
+from starlette.concurrency import run_in_threadpool
 
 from database.connection import get_db
 from database.models import AgentLog, OrderStatus, Part, PurchaseOrder, Supplier
@@ -23,7 +24,12 @@ FINANCIAL_CONSTITUTION_MAX_SPEND = 5000.00
 @limiter.limit("60/minute")
 def get_orders(request: Request, db: Session = Depends(get_db)) -> list[dict]:
     """Return all purchase orders."""
-    orders = db.query(PurchaseOrder).order_by(PurchaseOrder.created_at.desc()).all()
+    orders = (
+        db.query(PurchaseOrder)
+        .options(joinedload(PurchaseOrder.part), joinedload(PurchaseOrder.supplier))
+        .order_by(PurchaseOrder.created_at.desc())
+        .all()
+    )
     return [
         {
             "po_number": po.po_number,
@@ -114,55 +120,61 @@ async def update_order_status(
     Glass Box: Emits a structured log via Socket.io so the dashboard
     shows the approval/rejection in real-time.
     """
-    po = db.query(PurchaseOrder).filter(PurchaseOrder.po_number == po_number).first()
-    if not po:
-        raise HTTPException(status_code=404, detail=f"Purchase order '{po_number}' not found")
+    def _db_work() -> dict:
+        po = db.query(PurchaseOrder).filter(PurchaseOrder.po_number == po_number).first()
+        if not po:
+            raise HTTPException(status_code=404, detail=f"Purchase order '{po_number}' not found")
 
-    if po.status != OrderStatus.PENDING_APPROVAL:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Cannot update PO '{po_number}': current status is '{po.status.value}', "
-                   f"only PENDING_APPROVAL orders can be approved or rejected.",
+        if po.status != OrderStatus.PENDING_APPROVAL:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Cannot update PO '{po_number}': current status is '{po.status.value}', "
+                       f"only PENDING_APPROVAL orders can be approved or rejected.",
+            )
+
+        new_status = OrderStatus(body.status)
+        po.status = new_status
+
+        # --- Glass Box: Persist log to DB ---
+        action_word = "APPROVED" if new_status == OrderStatus.APPROVED else "REJECTED"
+        log_type = "success" if new_status == OrderStatus.APPROVED else "warning"
+        log_msg = (
+            f"PO {po_number} {action_word} by human operator — "
+            f"{po.quantity}x {po.part.part_id} from {po.supplier.name} "
+            f"(${po.total_cost:,.2f})"
         )
+        log_entry = AgentLog(
+            agent="Buyer",
+            message=log_msg,
+            log_type=log_type,
+        )
+        db.add(log_entry)
+        db.commit()
 
-    new_status = OrderStatus(body.status)
-    po.status = new_status
+        return {
+            "po_number": po.po_number,
+            "part_id": po.part.part_id,
+            "supplier": po.supplier.name,
+            "quantity": po.quantity,
+            "unit_cost": po.unit_cost,
+            "total_cost": po.total_cost,
+            "status": po.status.value,
+            "created_at": po.created_at.isoformat(),
+            "triggered_by": po.triggered_by,
+            "_log_payload": {
+                "timestamp": log_entry.timestamp.isoformat() if log_entry.timestamp else datetime.now(timezone.utc).isoformat(),
+                "agent": "Buyer",
+                "message": log_msg,
+                "type": log_type,
+            },
+        }
 
-    # --- Glass Box: Persist log to DB ---
-    action_word = "APPROVED" if new_status == OrderStatus.APPROVED else "REJECTED"
-    log_type = "success" if new_status == OrderStatus.APPROVED else "warning"
-    log_msg = (
-        f"PO {po_number} {action_word} by human operator — "
-        f"{po.quantity}x {po.part.part_id} from {po.supplier.name} "
-        f"(${po.total_cost:,.2f})"
-    )
-    log_entry = AgentLog(
-        agent="Ghost-Writer",
-        message=log_msg,
-        log_type=log_type,
-    )
-    db.add(log_entry)
-    db.commit()
+    result = await run_in_threadpool(_db_work)
 
     # --- Glass Box: Emit log via Socket.io for real-time dashboard ---
     sio = getattr(request.app.state, "sio", None)
+    log_payload = result.pop("_log_payload")
     if sio is not None:
-        log_payload = {
-            "timestamp": log_entry.timestamp.isoformat() if log_entry.timestamp else datetime.now(timezone.utc).isoformat(),
-            "agent": "Ghost-Writer",
-            "message": log_msg,
-            "type": log_type,
-        }
         await sio.emit("agent_log", log_payload)
 
-    return {
-        "po_number": po.po_number,
-        "part_id": po.part.part_id,
-        "supplier": po.supplier.name,
-        "quantity": po.quantity,
-        "unit_cost": po.unit_cost,
-        "total_cost": po.total_cost,
-        "status": po.status.value,
-        "created_at": po.created_at.isoformat(),
-        "triggered_by": po.triggered_by,
-    }
+    return result

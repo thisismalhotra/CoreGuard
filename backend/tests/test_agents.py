@@ -4,7 +4,7 @@ Tests for Core-Guard agent business logic.
 Covers:
   - MRP net requirements calculation (core_guard.py)
   - Financial Constitution enforcement (ghost_writer.py)
-  - Demand spike detection (aura.py)
+  - Demand spike detection (Scout / aura.py)
   - Criticality-based routing
   - Inventory available clamping
 """
@@ -63,11 +63,11 @@ class TestInventoryAvailable:
 
 
 # ---------------------------------------------------------------------------
-# Aura — Demand Spike Detection
+# Scout — Demand Spike Detection
 # ---------------------------------------------------------------------------
 
-class TestAuraDemandSpike:
-    """Test the Aura agent's spike detection logic."""
+class TestScoutDemandSpike:
+    """Test the Scout agent's spike detection logic."""
 
     def test_spike_detected(self, db):
         """Spike should be detected when demand exceeds threshold."""
@@ -89,11 +89,11 @@ class TestAuraDemandSpike:
 
 
 # ---------------------------------------------------------------------------
-# Core-Guard — MRP Net Requirements
+# Solver — MRP Net Requirements
 # ---------------------------------------------------------------------------
 
-class TestCoreGuardMRP:
-    """Test the Core-Guard MRP explosion and routing logic."""
+class TestSolverMRP:
+    """Test the Solver MRP explosion and routing logic."""
 
     def test_no_shortage_when_stock_sufficient(self, db):
         """With small demand, no shortages should be reported."""
@@ -162,11 +162,11 @@ class TestCoreGuardMRP:
 
 
 # ---------------------------------------------------------------------------
-# Ghost-Writer — Financial Constitution
+# Buyer — Financial Constitution
 # ---------------------------------------------------------------------------
 
-class TestGhostWriterConstitution:
-    """Test Rule C: Financial Constitution enforcement in Ghost-Writer."""
+class TestBuyerConstitution:
+    """Test Rule C: Financial Constitution enforcement in Buyer."""
 
     def test_auto_approved_below_limit(self, db):
         """Orders under $5,000 should be auto-approved."""
@@ -178,7 +178,7 @@ class TestGhostWriterConstitution:
             "total_cost": 125.00,
             "supplier_id": 1,
             "supplier_name": "AluForge",
-            "triggered_by": "Core-Guard",
+            "triggered_by": "Solver",
         }]
         result = process_buy_orders(db, buy_orders)
         assert len(result["purchase_orders"]) == 1
@@ -194,7 +194,7 @@ class TestGhostWriterConstitution:
             "total_cost": 6250.00,  # > $5,000
             "supplier_id": 1,
             "supplier_name": "AluForge",
-            "triggered_by": "Core-Guard",
+            "triggered_by": "Solver",
         }]
         result = process_buy_orders(db, buy_orders)
         assert len(result["purchase_orders"]) == 1
@@ -210,7 +210,7 @@ class TestGhostWriterConstitution:
             "total_cost": 5000.00,  # Exactly $5,000
             "supplier_id": 1,
             "supplier_name": "AluForge",
-            "triggered_by": "Core-Guard",
+            "triggered_by": "Solver",
         }]
         result = process_buy_orders(db, buy_orders)
         assert len(result["purchase_orders"]) == 1
@@ -258,7 +258,7 @@ class TestGhostWriterConstitution:
                 "total_cost": 125.00,
                 "supplier_id": 1,
                 "supplier_name": "AluForge",
-                "triggered_by": "Core-Guard",
+                "triggered_by": "Solver",
             },
             {
                 "type": "BUY_ORDER",
@@ -268,7 +268,7 @@ class TestGhostWriterConstitution:
                 "total_cost": 9500.00,  # > $5,000
                 "supplier_id": 2,
                 "supplier_name": "MicroConnect",
-                "triggered_by": "Core-Guard",
+                "triggered_by": "Solver",
             },
         ]
         result = process_buy_orders(db, buy_orders)
@@ -287,7 +287,7 @@ class TestGhostWriterConstitution:
             "total_cost": 125.00,
             "supplier_id": 1,
             "supplier_name": "AluForge",
-            "triggered_by": "Core-Guard",
+            "triggered_by": "Solver",
         }]
         result = process_buy_orders(db, buy_orders)
         po_number = result["purchase_orders"][0]["po_number"]
@@ -295,7 +295,7 @@ class TestGhostWriterConstitution:
         assert len(po_number) > 3
 
     def test_glass_box_logs_emitted(self, db):
-        """Ghost-Writer should emit Glass Box logs for all actions."""
+        """Buyer should emit Glass Box logs for all actions."""
         buy_orders = [{
             "type": "BUY_ORDER",
             "part_id": "CH-101",
@@ -304,16 +304,16 @@ class TestGhostWriterConstitution:
             "total_cost": 125.00,
             "supplier_id": 1,
             "supplier_name": "AluForge",
-            "triggered_by": "Core-Guard",
+            "triggered_by": "Solver",
         }]
         result = process_buy_orders(db, buy_orders)
         assert len(result["logs"]) >= 3  # Received, Processing, Created
         for log in result["logs"]:
-            assert log["agent"] == "Ghost-Writer"
+            assert log["agent"] == "Buyer"
 
 
 # ---------------------------------------------------------------------------
-# Core-Guard — Blast Radius Analysis (PRD §3)
+# Solver — Blast Radius Analysis (PRD §3)
 # ---------------------------------------------------------------------------
 
 class TestBlastRadiusAnalysis:
@@ -338,11 +338,11 @@ class TestBlastRadiusAnalysis:
         result = calculate_blast_radius(db, "CH-101")
         assert len(result["logs"]) > 0
         for log in result["logs"]:
-            assert log["agent"] == "Core-Guard"
+            assert log["agent"] == "Solver"
 
 
 # ---------------------------------------------------------------------------
-# Core-Guard — Ring-Fencing Enforcement (PRD §11)
+# Solver — Ring-Fencing Enforcement (PRD §11)
 # ---------------------------------------------------------------------------
 
 class TestRingFencing:
@@ -390,11 +390,11 @@ class TestRingFencing:
 
 
 # ---------------------------------------------------------------------------
-# Part Agent — Digital Twin (PRD §4, §8, §9)
+# Pulse — Digital Twin (PRD §4, §8, §9)
 # ---------------------------------------------------------------------------
 
-class TestDemandHorizonZones:
-    """Test Demand Horizon Zones classification (PRD §10)."""
+class TestLookoutZones:
+    """Test Lookout Zones classification (PRD §10)."""
 
     def test_zone_1_fuzzy_forecast(self):
         """Demand > 6 months out → Zone 1."""
@@ -413,7 +413,7 @@ class TestDemandHorizonZones:
         result = evaluate_demand_horizon(db, "CH-101", 500, 365)
         assert result["zone"] == 1
         assert result["generate_po"] is False
-        assert "Aura" in result["active_agents"]
+        assert "Scout" in result["active_agents"]
 
     def test_zone_2_standard_po(self, db):
         """Zone 2 should generate a standard PO (no expedite)."""
@@ -436,8 +436,8 @@ class TestDemandHorizonZones:
         assert len(result["logs"]) > 0
 
 
-class TestDataIntegrity:
-    """Test Data Integrity Agent — Ghost and Suspect Inventory (PRD §11)."""
+class TestAuditor:
+    """Test Auditor Agent — Ghost and Suspect Inventory (PRD §11)."""
 
     def test_ghost_inventory_detected(self, db):
         """Parts with burn rate > 0 and no consumption should be flagged as ghost."""
@@ -489,10 +489,10 @@ class TestDataIntegrity:
 
 
 class TestSlowBleedScenario:
-    """Test Scenario G: Slow Bleed — gradual burn rate increase detected by Part Agent."""
+    """Test Scenario G: Slow Bleed — gradual burn rate increase detected by Pulse."""
 
     def test_slow_bleed_detects_runway_decline(self, db):
-        """Part Agent should detect runway declining across simulated days."""
+        """Pulse should detect runway declining across simulated days."""
         from agents.part_agent import monitor_part
 
         inv = db.query(Inventory).join(Part).filter(Part.part_id == "CH-101").first()
@@ -509,7 +509,7 @@ class TestSlowBleedScenario:
             assert runways[i] < runways[i - 1], f"Runway should decline: {runways}"
 
     def test_slow_bleed_triggers_handshake(self, db):
-        """At high enough burn rate, Part Agent handshake should fire."""
+        """At high enough burn rate, Pulse handshake should fire."""
         from agents.part_agent import monitor_part
 
         inv = db.query(Inventory).join(Part).filter(Part.part_id == "CH-101").first()
@@ -522,7 +522,7 @@ class TestSlowBleedScenario:
 
 
 class TestInventoryDecayScenario:
-    """Test Scenario H: Inventory Decay — Part Agent + Data Integrity find ghost/stale stock."""
+    """Test Scenario H: Inventory Decay — Pulse + Auditor find ghost/stale stock."""
 
     def test_ghost_inventory_changes_runway(self, db):
         """After ghost detection, recalculated runway should reflect corrected inventory."""
@@ -565,7 +565,7 @@ class TestMultiSkuContentionScenario:
         assert combined_runway < solo_runway
 
     def test_contention_triggers_handshake_when_solo_is_safe(self, db):
-        """A component safe for one SKU may trigger handshake under multi-SKU contention."""
+        """A component safe for one SKU may trigger Pulse handshake under multi-SKU contention."""
         from agents.part_agent import monitor_part
 
         inv = db.query(Inventory).join(Part).filter(Part.part_id == "CH-101").first()
@@ -578,8 +578,8 @@ class TestMultiSkuContentionScenario:
         assert result_contention["handshake_triggered"] is True
 
 
-class TestPartAgentFormulas:
-    """Test Part Agent pure math functions (PRD §8)."""
+class TestPulseFormulas:
+    """Test Pulse pure math functions (PRD §8)."""
 
     def test_dynamic_safety_stock_formula(self):
         """PRD §8: Safety Stock = (Max Usage × Max LT) - (Avg Usage × Avg LT)."""
@@ -614,8 +614,8 @@ class TestPartAgentFormulas:
         assert evaluate_handshake_trigger(20.0, 5, 5.0) is False
 
 
-class TestPartAgentMonitoring:
-    """Test Part Agent's monitor_part and monitor_all_components (PRD §9)."""
+class TestPulseMonitoring:
+    """Test Pulse's monitor_part and monitor_all_components (PRD §9)."""
 
     def test_monitor_part_returns_valid_structure(self, db):
         """monitor_part should return all required fields."""
@@ -653,19 +653,19 @@ class TestPartAgentMonitoring:
 # ---------------------------------------------------------------------------
 
 class TestAgentChainIntegration:
-    """End-to-end test of the agent chain: Aura → Core-Guard → Ghost-Writer."""
+    """End-to-end test of the agent chain: Scout → Solver → Buyer."""
 
     def test_full_spike_chain(self, db):
         """Simulate a demand spike and verify the full agent chain produces POs."""
-        # Step 1: Aura detects spike
+        # Step 1: Scout detects spike
         aura_result = detect_demand_spike(db, "FL-001-T", 500)
         assert aura_result["spike_detected"] is True
 
-        # Step 2: Core-Guard calculates net requirements
+        # Step 2: Solver calculates net requirements
         mrp_result = calculate_net_requirements(db, "FL-001-T", 500)
         assert len(mrp_result["logs"]) > 0
 
-        # Step 3: Ghost-Writer processes buy orders
+        # Step 3: Buyer processes buy orders
         buy_orders = [a for a in mrp_result["actions"] if a["type"] == "BUY_ORDER"]
         if buy_orders:
             ghost_result = process_buy_orders(db, buy_orders)
@@ -687,35 +687,35 @@ class TestAgentChainIntegration:
         """
         PRD §9: Complete 5-Step Execution Loop.
 
-        Step 1: Aura detects demand spike (Trigger Event)
-        Step 2: Part Agent monitors components (Baseline + Local Validation)
-        Step 3: Dispatcher triages by criticality
-        Step 4: Core-Guard runs MRP + ring-fencing + blast radius (Handshake)
-        Step 5: Ghost-Writer drafts POs (Execution Draft)
+        Step 1: Scout detects demand spike (Trigger Event)
+        Step 2: Pulse monitors components (Baseline + Local Validation)
+        Step 3: Router triages by criticality
+        Step 4: Solver runs MRP + ring-fencing + blast radius (Handshake)
+        Step 5: Buyer drafts POs (Execution Draft)
         """
         from agents.dispatcher import triage_demand_spike
 
         sku = "FL-001-T"
         spiked_qty = 500
 
-        # Step 1: Aura — Trigger Event
+        # Step 1: Scout — Trigger Event
         aura_result = detect_demand_spike(db, sku, spiked_qty)
         assert aura_result["spike_detected"] is True
         assert len(aura_result["logs"]) > 0
 
-        # Step 2: Part Agent — Baseline Monitoring + Local Validation
+        # Step 2: Pulse — Baseline Monitoring + Local Validation
         part_result = monitor_all_components(db, sku, spiked_qty)
         assert "component_reports" in part_result
         assert len(part_result["component_reports"]) > 0
         # At least one crisis signal should fire under heavy demand
         assert len(part_result["logs"]) > 0
 
-        # Step 3: Dispatcher — Triage by criticality
+        # Step 3: Router — Triage by criticality
         dispatch_result = triage_demand_spike(db, sku, spiked_qty)
         assert len(dispatch_result["priority_queue"]) > 0
         assert len(dispatch_result["logs"]) > 0
 
-        # Step 4: Core-Guard — MRP explosion
+        # Step 4: Solver — MRP explosion
         mrp_result = calculate_net_requirements(db, sku, spiked_qty)
         assert len(mrp_result["shortages"]) > 0
         assert len(mrp_result["logs"]) > 0
@@ -730,7 +730,7 @@ class TestAgentChainIntegration:
             assert "affected_finished_goods" in blast_result
             assert len(blast_result["logs"]) > 0
 
-        # Step 5: Ghost-Writer — Execution Draft
+        # Step 5: Buyer — Execution Draft
         buy_orders = [a for a in mrp_result["actions"] if a["type"] == "BUY_ORDER"]
         assert len(buy_orders) > 0
         ghost_result = process_buy_orders(db, buy_orders)

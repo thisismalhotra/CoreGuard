@@ -20,39 +20,39 @@ import { ThemeToggle } from "./ThemeToggle";
 
 const AGENT_CHAIN = [
   {
-    name: "Aura",
+    name: "Scout",
     role: "Demand Sensing",
     color: "bg-purple-600",
     description: "Monitors demand forecasts vs actual consumption. Fires when actual > forecast × 1.2.",
     rule: "Spike threshold: 20% above forecast",
   },
   {
-    name: "Dispatcher",
+    name: "Router",
     role: "Triage & Prioritization",
     color: "bg-cyan-600",
-    description: "Receives shortage alerts from Aura. Scores each component by criticality, lead time sensitivity, and gap size. Sorts into a priority queue.",
+    description: "Receives shortage alerts from Scout. Scores each component by criticality, lead time sensitivity, and gap size. Sorts into a priority queue.",
     rule: "High-criticality parts always processed first",
   },
   {
-    name: "Core-Guard",
+    name: "Solver",
     role: "MRP Logic",
     color: "bg-blue-600",
     description: "Performs BOM explosion and net requirement calculations in pure Python. Decides whether to REALLOCATE from substitutes or BUY new stock.",
     rule: "All arithmetic is Python — never delegated to an LLM",
   },
   {
-    name: "Ghost-Writer",
+    name: "Buyer",
     role: "Procurement & PO Generation",
     color: "bg-emerald-600",
     description: "Creates Purchase Orders in the database and generates PDF documents. Enforces the Financial Constitution before any PO is issued.",
     rule: "Hard block: total_cost > $5,000 → PENDING_APPROVAL",
   },
   {
-    name: "Eagle-Eye",
+    name: "Inspector",
     role: "Quality Inspection",
     color: "bg-orange-600",
     description: "Validates incoming shipment batches against CAD spec tolerances (hardness, dimensions). Quarantines failed batches and triggers emergency reorders.",
-    rule: "FAIL result → stock quarantined + Core-Guard reorder triggered",
+    rule: "FAIL result → stock quarantined + Solver reorder triggered",
   },
 ];
 
@@ -62,8 +62,8 @@ const SCENARIOS = [
     label: "300% Demand Spike",
     icon: TrendingUp,
     color: "text-yellow-400",
-    description: "Aura detects 3× demand surge on FL-001-T.",
-    observe: "Watch Core-Guard decide between reallocation and new PO. Check if Ghost-Writer splits the order to stay under the $5k constitution.",
+    description: "Scout detects 3× demand surge on FL-001-T.",
+    observe: "Watch Solver decide between reallocation and new PO. Check if Buyer splits the order to stay under the $5k constitution.",
   },
   {
     id: "shock",
@@ -71,15 +71,15 @@ const SCENARIOS = [
     icon: Flame,
     color: "text-red-400",
     description: "CREE Inc. goes offline — primary LED supplier is unavailable.",
-    observe: "Watch Core-Guard select an alternate supplier. See Dispatcher re-score priorities with elevated lead time.",
+    observe: "Watch Solver select an alternate supplier. See Router re-score priorities with elevated lead time.",
   },
   {
     id: "quality",
     label: "Quality Fail (CH-231)",
     icon: XCircle,
     color: "text-orange-400",
-    description: "Eagle-Eye detects spec violations in an incoming CH-231 Body Tube batch.",
-    observe: "Batch is quarantined in Digital Dock. Core-Guard fires an emergency reorder. Check the Quality Inspections tab.",
+    description: "Inspector detects spec violations in an incoming CH-231 Body Tube batch.",
+    observe: "Batch is quarantined in Digital Dock. Solver fires an emergency reorder. Check the Quality Inspections tab.",
   },
   {
     id: "cascade",
@@ -95,7 +95,7 @@ const SCENARIOS = [
     icon: DollarSign,
     color: "text-pink-400",
     description: "800% spike forces a PO that exceeds the $5,000 guardrail.",
-    observe: "Ghost-Writer sets status to PENDING_APPROVAL. Navigate to Digital Dock → Purchase Orders to approve or reject it.",
+    observe: "Buyer sets status to PENDING_APPROVAL. Navigate to Digital Dock → Purchase Orders to approve or reject it.",
   },
   {
     id: "blackout",
@@ -103,7 +103,7 @@ const SCENARIOS = [
     icon: WifiOff,
     color: "text-gray-400",
     description: "ALL suppliers go offline simultaneously.",
-    observe: "Core-Guard exhausts every option. A CRITICAL escalation alert is emitted. No PO can be issued.",
+    observe: "Solver exhausts every option. A CRITICAL escalation alert is emitted. No PO can be issued.",
   },
 ];
 
@@ -118,7 +118,7 @@ const TIPS = [
   { icon: "↺", text: "Use Reset Simulation in God Mode to restore the database to its seed state between scenarios." },
   { icon: "🗄", text: "Open the DB Viewer to inspect raw table data — see PurchaseOrder status, inventory levels, and agent logs persisted in SQLite." },
   { icon: "🤖", text: "The Agents page shows each agent's role, rules, and data flow — useful context before running a scenario." },
-  { icon: "📄", text: "Ghost-Writer generates real PDF purchase orders in backend/generated_pos/ after each simulation." },
+  { icon: "📄", text: "Buyer generates real PDF purchase orders in backend/generated_pos/ after each simulation." },
 ];
 
 export function OnboardingPage() {
@@ -248,7 +248,7 @@ export function OnboardingPage() {
             </div>
             <p className="text-sm text-muted-foreground leading-relaxed">
               This rule is hard-coded in <span className="font-mono text-xs bg-muted px-1 py-0.5 rounded">ghost_writer.py</span>.
-              No LLM prompt or agent instruction can override it. When triggered, Ghost-Writer sets the
+              No LLM prompt or agent instruction can override it. When triggered, Buyer sets the
               PO status to <span className="font-mono text-xs bg-muted px-1 py-0.5 rounded">PENDING_APPROVAL</span> and
               emits a warning log.
             </p>

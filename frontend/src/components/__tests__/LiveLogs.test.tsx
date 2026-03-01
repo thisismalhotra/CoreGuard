@@ -15,19 +15,19 @@ vi.mock("@/lib/api", () => ({
 const mockLogs: AgentLog[] = [
   {
     timestamp: "2026-02-28T10:00:00Z",
-    agent: "Core-Guard",
+    agent: "Solver",
     message: "MRP calculation started",
     type: "info",
   },
   {
     timestamp: "2026-02-28T10:00:01Z",
-    agent: "Ghost-Writer",
+    agent: "Buyer",
     message: "PO generated for LED-201",
     type: "success",
   },
   {
     timestamp: "2026-02-28T10:00:02Z",
-    agent: "Eagle-Eye",
+    agent: "Inspector",
     message: "Batch failed inspection",
     type: "error",
   },
@@ -68,15 +68,15 @@ describe("LiveLogs", () => {
     const user = userEvent.setup();
     render(<LiveLogs logs={mockLogs} onClear={onClear} />);
 
-    // Click the "Core-Guard" agent filter button
+    // Click the "Solver" agent filter button
     const agentButtons = screen.getAllByRole("button");
-    const coreGuardButton = agentButtons.find(
-      (btn) => btn.textContent === "Core-Guard" && btn.className.includes("text-[10px]")
+    const solverButton = agentButtons.find(
+      (btn) => btn.textContent === "Solver" && btn.className.includes("text-[10px]")
     );
-    expect(coreGuardButton).toBeDefined();
-    await user.click(coreGuardButton!);
+    expect(solverButton).toBeDefined();
+    await user.click(solverButton!);
 
-    // Only Core-Guard logs should be visible
+    // Only Solver logs should be visible
     expect(screen.getByText("MRP calculation started")).toBeInTheDocument();
     expect(screen.queryByText("PO generated for LED-201")).not.toBeInTheDocument();
     expect(screen.queryByText("Batch failed inspection")).not.toBeInTheDocument();
@@ -104,12 +104,12 @@ describe("LiveLogs", () => {
     const user = userEvent.setup();
     render(<LiveLogs logs={mockLogs} onClear={onClear} />);
 
-    // Activate agent filter for Ghost-Writer
+    // Activate agent filter for Buyer
     const allButtons = screen.getAllByRole("button");
-    const ghostWriterButton = allButtons.find(
-      (btn) => btn.textContent === "Ghost-Writer" && btn.className.includes("text-[10px]")
+    const buyerButton = allButtons.find(
+      (btn) => btn.textContent === "Buyer" && btn.className.includes("text-[10px]")
     );
-    await user.click(ghostWriterButton!);
+    await user.click(buyerButton!);
 
     // Activate type filter for "error"
     const errorTypeButton = allButtons.find(
@@ -117,7 +117,7 @@ describe("LiveLogs", () => {
     );
     await user.click(errorTypeButton!);
 
-    // Ghost-Writer + error type = no logs match (Ghost-Writer log is "success", not "error")
+    // Buyer + error type = no logs match (Buyer log is "success", not "error")
     expect(screen.queryByText("MRP calculation started")).not.toBeInTheDocument();
     expect(screen.queryByText("PO generated for LED-201")).not.toBeInTheDocument();
     expect(screen.queryByText("Batch failed inspection")).not.toBeInTheDocument();

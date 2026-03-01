@@ -1,5 +1,5 @@
 """
-Aura Agent — Demand Sensing.
+Scout Agent — Demand Sensing.
 
 Monitors sales data and detects when actual demand exceeds forecast threshold.
 Fires a DEMAND_SPIKE event when Sales > Forecast * 1.2 (per PRD §3.3.1).
@@ -17,7 +17,7 @@ from sqlalchemy.orm import Session
 from agents.utils import create_agent_log
 from database.models import DemandForecast, Part
 
-AGENT_NAME = "Aura"
+AGENT_NAME = "Scout"
 SPIKE_THRESHOLD = 1.2  # Fire DEMAND_SPIKE when actual > forecast * threshold
 
 
@@ -79,7 +79,7 @@ def detect_demand_spike(
         logs.append(_log(
             db,
             f"DEMAND_SPIKE detected for {sku}! Actual demand is {multiplier}x forecast. "
-            f"Escalating to Core-Guard MRP Agent.",
+            f"Escalating to Solver MRP Agent.",
             "warning",
         ))
     else:

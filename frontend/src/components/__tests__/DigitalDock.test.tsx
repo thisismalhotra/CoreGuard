@@ -17,7 +17,7 @@ const { mockOrders, mockInspections } = vi.hoisted(() => {
       total_cost: 5750,
       status: "PENDING_APPROVAL",
       created_at: "2026-02-28T10:00:00Z",
-      triggered_by: "Ghost-Writer",
+      triggered_by: "Buyer",
     },
     {
       po_number: "PO-002",
@@ -28,7 +28,7 @@ const { mockOrders, mockInspections } = vi.hoisted(() => {
       total_cost: 800,
       status: "APPROVED",
       created_at: "2026-02-28T09:00:00Z",
-      triggered_by: "Ghost-Writer",
+      triggered_by: "Buyer",
     },
   ];
 

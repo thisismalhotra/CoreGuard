@@ -1,9 +1,9 @@
 """
-Eagle-Eye Agent — Quality Inspection.
+Inspector Agent — Quality Inspection.
 
 Simulates receiving a physical shipment at the Digital Dock and comparing it
 against spec tolerances. Passes or fails the batch and triggers remediation
-if it fails (quarantine + emergency reorder via Core-Guard → Ghost-Writer).
+if it fails (quarantine + emergency reorder via Solver -> Buyer).
 
 Stateless: operates on DB state passed in. Emits structured logs for Glass Box visibility.
 """
@@ -19,7 +19,7 @@ from sqlalchemy.orm import Session
 from agents.utils import create_agent_log
 from database.models import InspectionResult, Part, QualityInspection, Supplier
 
-AGENT_NAME = "Eagle-Eye"
+AGENT_NAME = "Inspector"
 
 # CAD Spec tolerances (simulated — would normally come from Pinecone vector DB)
 CAD_SPECS = {
@@ -154,7 +154,7 @@ def inspect_batch(
         logs.append(_log(db, f"Quarantining entire batch of {batch_size}x {part_id}. Stock NOT added to inventory.", "warning"))
 
         # Trigger emergency reorder — prefer an alternate supplier since this one sent defective parts
-        logs.append(_log(db, f"Eagle-Eye escalating to Core-Guard: requesting emergency reorder of {batch_size}x {part_id}.", "warning"))
+        logs.append(_log(db, f"Inspector escalating to Solver: requesting emergency reorder of {batch_size}x {part_id}.", "warning"))
 
         reorder_supplier_id = part.supplier_id
         reorder_supplier_name = part.supplier.name if part.supplier else "Unknown"

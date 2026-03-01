@@ -16,11 +16,11 @@ import { Badge } from "@/components/ui/badge";
 const STORAGE_KEY = "cg_onboarding_seen";
 
 const AGENT_CHAIN = [
-  { name: "Aura", role: "Demand Sensing", color: "bg-purple-600" },
-  { name: "Dispatcher", role: "Triage & Priority", color: "bg-cyan-600" },
-  { name: "Core-Guard", role: "MRP Logic", color: "bg-blue-600" },
-  { name: "Ghost-Writer", role: "Procurement", color: "bg-emerald-600" },
-  { name: "Eagle-Eye", role: "Quality Inspection", color: "bg-orange-600" },
+  { name: "Scout", role: "Demand Sensing", color: "bg-purple-600" },
+  { name: "Router", role: "Triage & Priority", color: "bg-cyan-600" },
+  { name: "Solver", role: "MRP Logic", color: "bg-blue-600" },
+  { name: "Buyer", role: "Procurement", color: "bg-emerald-600" },
+  { name: "Inspector", role: "Quality Inspection", color: "bg-orange-600" },
 ];
 
 type Slide = {

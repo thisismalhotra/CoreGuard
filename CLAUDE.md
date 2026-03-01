@@ -12,7 +12,7 @@ Core-Guard is an AI-driven supply chain management system.
 
 - **The Product:** FL-001 Flashlight (Modular Assembly)
 - **The Problem:** Manual supply chains are too slow
-- **The Solution:** A network of autonomous agents (Aura, Core-Guard, Ghost-Writer, Eagle-Eye) that detect shortages and execute solutions instantly
+- **The Solution:** A network of autonomous agents (Scout, Solver, Buyer, Inspector) that detect shortages and execute solutions instantly
 - **The MVP:** A local simulation where a user triggers a "Demand Spike" and watches the agents negotiate and execute a Purchase Order (PO) in real-time
 
 See `PRD.md` and `ARCHITECTURE.md` for full product and system specifications.
@@ -90,7 +90,7 @@ When building, follow this order:
 1. **Database & Models** — `models.py` (SQLAlchemy), `seed.py` (FL-001 data)
 2. **API Layer** — `main.py` with FastAPI, SocketManager, `GET /inventory`, `POST /orders`
 3. **Agent Logic** — `agents/core_guard.py` (MRP/Net Requirements), `agents/ghost_writer.py` (PO + PDF via fpdf + cost validation)
-4. **Simulation Harness** — `POST /simulate/spike` → triggers Core-Guard → Ghost-Writer → emits logs
+4. **Simulation Harness** — `POST /simulate/spike` → triggers Solver → Buyer → emits logs
 5. **Dashboard** — `components/CommandCenter.tsx` with WebSocket connection, Live Logs terminal, Inventory cards
 
 ## Coding Style
@@ -106,7 +106,7 @@ When building, follow this order:
 When writing LangChain prompts, use this structure:
 
 ```
-SYSTEM: You are Core-Guard, the MRP Logic Agent.
+SYSTEM: You are Solver, the MRP Logic Agent.
 CONTEXT:
   - SKU: CH-231
   - On Hand: 150

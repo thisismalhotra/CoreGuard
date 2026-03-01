@@ -196,7 +196,7 @@ class Part(Base):
     unit_cost = Column(Float, nullable=False, default=0.0)
     supplier_id = Column(Integer, ForeignKey("suppliers.id"), nullable=True)  # Nullable for Finished Goods
 
-    # Part profile fields — used by Dispatcher and Core-Guard for prioritisation
+    # Part profile fields — used by Router and Solver for prioritisation
     criticality = Column(SAEnum(CriticalityLevel), nullable=False, default=CriticalityLevel.MEDIUM)
     lead_time_sensitivity = Column(Float, nullable=False, default=0.5)  # 0.0 (tolerant) to 1.0 (urgent)
     substitute_pool_size = Column(Integer, nullable=False, default=0)   # How many alternate suppliers exist

@@ -1,4 +1,4 @@
-"""Tests for recursive (multi-level) BOM explosion in Core-Guard."""
+"""Tests for recursive (multi-level) BOM explosion in Solver."""
 
 from agents.core_guard import calculate_net_requirements
 

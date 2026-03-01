@@ -3,7 +3,7 @@ Agent metadata & DB viewer REST endpoints.
 """
 
 from fastapi import APIRouter, Depends, Query, Request
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from database.connection import get_db
 from database.models import (
@@ -50,19 +50,19 @@ def get_agents(request: Request) -> list[dict]:
     """Return metadata for all agents in the system."""
     return [
         {
-            "name": "Part-Agent",
+            "name": "Pulse",
             "role": "Digital Twin / SKU Sentinel",
-            "description": "Each Part Agent acts as a digital twin for a single SKU. Continuously monitors on-hand levels, calculates dynamic safety stock, computes real-time runway (days to stockout), and triggers a handshake to Core-Guard when runway drops below the threshold.",
+            "description": "Each Pulse agent acts as a digital twin for a single SKU. Continuously monitors on-hand levels, calculates dynamic safety stock, computes real-time runway (days to stockout), and triggers a handshake to Solver when runway drops below the threshold.",
             "trigger": "Demand spike event or continuous monitoring cycle",
             "inputs": ["Part ID", "On-Hand inventory", "Daily burn rate (trailing 3-day velocity)", "Supplier lead time"],
-            "outputs": ["Dynamic safety stock", "Runway (days to stockout)", "Crisis Signal (handshake to Core-Guard)", "Glass Box logs"],
-            "downstream": "Core-Guard (via handshake)",
+            "outputs": ["Dynamic safety stock", "Runway (days to stockout)", "Crisis Signal (handshake to Solver)", "Glass Box logs"],
+            "downstream": "Solver (via handshake)",
             "constitution": None,
             "rules": [
                 "Dynamic Safety Stock = (Max Daily Usage × Max Lead Time) - (Avg Daily Usage × Avg Lead Time)",
                 "Runway = On-Hand / Trailing 3-Day Velocity (NOT monthly forecast average — PRD §8)",
                 "Handshake Trigger: if runway < (supplier_lead_time + safety_stock_days)",
-                "Sends verified Crisis Signal (not raw data) to Core-Guard",
+                "Sends verified Crisis Signal (not raw data) to Solver",
                 "Stateless — operates on DB state, never caches",
             ],
             "color": "yellow",
@@ -70,13 +70,13 @@ def get_agents(request: Request) -> list[dict]:
             "source_file": "agents/part_agent.py",
         },
         {
-            "name": "Aura",
+            "name": "Scout",
             "role": "Demand Sensing Agent",
             "description": "Monitors real-time sales data and demand signals. Detects when actual demand deviates from forecast thresholds, triggering the agent chain.",
             "trigger": "Incoming demand data exceeds forecast by 20%+ (SPIKE_THRESHOLD = 1.2x)",
             "inputs": ["SKU identifier", "New actual demand quantity", "Demand forecast table"],
             "outputs": ["DEMAND_SPIKE event", "Spike multiplier", "Glass Box logs"],
-            "downstream": "Dispatcher",
+            "downstream": "Router",
             "constitution": None,
             "rules": [
                 "Stateless \u2014 reads DB state, never caches",
@@ -89,13 +89,13 @@ def get_agents(request: Request) -> list[dict]:
             "source_file": "agents/aura.py",
         },
         {
-            "name": "Dispatcher",
+            "name": "Router",
             "role": "Triage & Prioritisation Agent",
-            "description": "Sits between Aura and Core-Guard. Analyses BOM components, scores each by criticality, lead-time sensitivity, and shortage severity, then hands Core-Guard a prioritised processing queue.",
-            "trigger": "DEMAND_SPIKE event from Aura",
+            "description": "Sits between Scout and Solver. Analyses BOM components, scores each by criticality, lead-time sensitivity, and shortage severity, then hands Solver a prioritised processing queue.",
+            "trigger": "DEMAND_SPIKE event from Scout",
             "inputs": ["SKU identifier", "Demand quantity", "BOM table", "Part profiles (criticality, lead_time_sensitivity)"],
             "outputs": ["Prioritised component queue", "Risk assessment", "Glass Box logs"],
-            "downstream": "Core-Guard",
+            "downstream": "Solver",
             "constitution": None,
             "rules": [
                 "Stateless \u2014 reads DB state, never caches",
@@ -110,13 +110,13 @@ def get_agents(request: Request) -> list[dict]:
             "source_file": "agents/dispatcher.py",
         },
         {
-            "name": "Core-Guard",
+            "name": "Solver",
             "role": "MRP Logic Agent",
             "description": "The brain of the supply chain. Performs BOM explosion, calculates net material requirements using deterministic math, and applies criticality-based routing rules to decide procurement strategy.",
-            "trigger": "Prioritised queue from Dispatcher, or direct invocation from simulation endpoints",
+            "trigger": "Prioritised queue from Router, or direct invocation from simulation endpoints",
             "inputs": ["SKU identifier", "Demand quantity", "BOM table", "Inventory table", "Part criticality profiles"],
             "outputs": ["Shortage analysis", "REALLOCATE actions", "BUY_ORDER actions (with expedite flags)", "Glass Box logs"],
-            "downstream": "Ghost-Writer",
+            "downstream": "Buyer",
             "constitution": None,
             "rules": [
                 "Stateless \u2014 operates on DB state passed in",
@@ -132,10 +132,10 @@ def get_agents(request: Request) -> list[dict]:
             "source_file": "agents/core_guard.py",
         },
         {
-            "name": "Ghost-Writer",
+            "name": "Buyer",
             "role": "Procurement & PO Generation Agent",
-            "description": "Receives BUY_ORDER actions from Core-Guard, validates spend against the Financial Constitution, creates Purchase Order records, and generates PDF documents.",
-            "trigger": "BUY_ORDER actions from Core-Guard or Eagle-Eye",
+            "description": "Receives BUY_ORDER actions from Solver, validates spend against the Financial Constitution, creates Purchase Order records, and generates PDF documents.",
+            "trigger": "BUY_ORDER actions from Solver or Inspector",
             "inputs": ["List of BUY_ORDER actions", "Parts table", "Suppliers table"],
             "outputs": ["PurchaseOrder records", "PDF documents", "Glass Box logs"],
             "downstream": None,
@@ -153,13 +153,13 @@ def get_agents(request: Request) -> list[dict]:
             "source_file": "agents/ghost_writer.py",
         },
         {
-            "name": "Eagle-Eye",
+            "name": "Inspector",
             "role": "Quality Inspection Agent",
             "description": "Simulates receiving physical shipments at the Digital Dock. Runs automated sensor scans against CAD spec tolerances. Passes or fails batches and triggers emergency remediation on failure.",
             "trigger": "Shipment arrival at Digital Dock (simulated via /simulate/quality-fail)",
             "inputs": ["Part ID", "Batch size", "CAD spec tolerances"],
             "outputs": ["PASS/FAIL inspection result", "Sensor readings", "BUY_ORDER actions (on fail)", "Glass Box logs"],
-            "downstream": "Ghost-Writer (on failure)",
+            "downstream": "Buyer (on failure)",
             "constitution": None,
             "rules": [
                 "Stateless \u2014 operates on DB state passed in",
@@ -176,7 +176,7 @@ def get_agents(request: Request) -> list[dict]:
             "source_file": "agents/eagle_eye.py",
         },
         {
-            "name": "Data-Integrity",
+            "name": "Auditor",
             "role": "Inventory Health Monitor",
             "description": "Ensures inventory data is trustworthy by scanning for ghost inventory (scheduled consumption but no deductions) and suspect inventory (no movement for 6+ months). Generates cycle count and physical count tasks.",
             "trigger": "Scheduled scan or manual invocation",
@@ -195,18 +195,18 @@ def get_agents(request: Request) -> list[dict]:
             "source_file": "agents/data_integrity.py",
         },
         {
-            "name": "Demand-Horizon",
+            "name": "Lookout",
             "role": "Demand Zone Classifier",
             "description": "Classifies incoming demand signals into three horizon zones (PRD §10) and routes them to the appropriate agent behaviour. Determines whether to advise, procure, or expedite.",
             "trigger": "New demand signal / forecast update",
             "inputs": ["Part ID", "Demand quantity", "Days until needed", "Supplier lead time"],
             "outputs": ["Zone classification (1/2/3)", "Active agents list", "Recommended action", "Secondary supplier (Zone 3)", "Glass Box logs"],
-            "downstream": "Aura (Z1) / Core-Guard+Ghost-Writer (Z2) / Part-Agent+Core-Guard (Z3)",
+            "downstream": "Scout (Z1) / Solver+Buyer (Z2) / Pulse+Solver (Z3)",
             "constitution": None,
             "rules": [
-                "Zone 1 (6-12+ months): Aura advisory only, NO POs generated",
-                "Zone 2 (2-5 months): Core-Guard BOM explosion + Ghost-Writer standard POs",
-                "Zone 3 (< lead time): Part Agent defends, Ghost-Writer pivots to secondary supplier",
+                "Zone 1 (6-12+ months): Scout advisory only, NO POs generated",
+                "Zone 2 (2-5 months): Solver BOM explosion + Buyer standard POs",
+                "Zone 3 (< lead time): Pulse defends, Buyer pivots to secondary supplier",
                 "Zone 3 POs are always expedited with cost-vs-risk trade-off",
             ],
             "color": "amber",
@@ -251,7 +251,7 @@ def db_parts(
     offset: int = Query(default=0, ge=0),
 ) -> list[dict]:
     """Raw parts table dump."""
-    rows = db.query(Part).order_by(Part.id).offset(offset).limit(limit).all()
+    rows = db.query(Part).options(joinedload(Part.supplier)).order_by(Part.id).offset(offset).limit(limit).all()
     return [
         {"id": p.id, "part_id": p.part_id, "description": p.description,
          "category": p.category.value, "unit_cost": p.unit_cost,
@@ -271,7 +271,7 @@ def db_inventory(
     offset: int = Query(default=0, ge=0),
 ) -> list[dict]:
     """Raw inventory table dump."""
-    rows = db.query(Inventory).order_by(Inventory.id).offset(offset).limit(limit).all()
+    rows = db.query(Inventory).options(joinedload(Inventory.part)).order_by(Inventory.id).offset(offset).limit(limit).all()
     return [
         {"id": inv.id, "part": inv.part.part_id if inv.part else None,
          "on_hand": inv.on_hand, "safety_stock": inv.safety_stock,
@@ -292,7 +292,7 @@ def db_bom(
     offset: int = Query(default=0, ge=0),
 ) -> list[dict]:
     """Raw BOM table dump."""
-    rows = db.query(BOMEntry).order_by(BOMEntry.id).offset(offset).limit(limit).all()
+    rows = db.query(BOMEntry).options(joinedload(BOMEntry.parent), joinedload(BOMEntry.component)).order_by(BOMEntry.id).offset(offset).limit(limit).all()
     return [
         {"id": b.id,
          "parent": b.parent.part_id if b.parent else None,
@@ -311,7 +311,7 @@ def db_orders(
     offset: int = Query(default=0, ge=0),
 ) -> list[dict]:
     """Raw purchase_orders table dump."""
-    rows = db.query(PurchaseOrder).order_by(PurchaseOrder.id).offset(offset).limit(limit).all()
+    rows = db.query(PurchaseOrder).options(joinedload(PurchaseOrder.part), joinedload(PurchaseOrder.supplier)).order_by(PurchaseOrder.id).offset(offset).limit(limit).all()
     return [
         {"id": po.id, "po_number": po.po_number,
          "part": po.part.part_id if po.part else None,
@@ -333,7 +333,7 @@ def db_demand_forecast(
     offset: int = Query(default=0, ge=0),
 ) -> list[dict]:
     """Raw demand_forecast table dump."""
-    rows = db.query(DemandForecast).order_by(DemandForecast.id).offset(offset).limit(limit).all()
+    rows = db.query(DemandForecast).options(joinedload(DemandForecast.part)).order_by(DemandForecast.id).offset(offset).limit(limit).all()
     return [
         {"id": d.id, "part": d.part.part_id if d.part else None,
          "forecast_qty": d.forecast_qty, "actual_qty": d.actual_qty,
@@ -355,7 +355,7 @@ def db_quality_inspections(
     offset: int = Query(default=0, ge=0),
 ) -> list[dict]:
     """Raw quality_inspections table dump."""
-    rows = db.query(QualityInspection).order_by(QualityInspection.id).offset(offset).limit(limit).all()
+    rows = db.query(QualityInspection).options(joinedload(QualityInspection.part)).order_by(QualityInspection.id).offset(offset).limit(limit).all()
     return [
         {"id": q.id, "part": q.part.part_id if q.part else None,
          "batch_size": q.batch_size, "result": q.result.value,
@@ -392,7 +392,7 @@ def db_sales_orders(
     offset: int = Query(default=0, ge=0),
 ) -> list[dict]:
     """Raw sales_orders table dump."""
-    rows = db.query(SalesOrder).order_by(SalesOrder.id).offset(offset).limit(limit).all()
+    rows = db.query(SalesOrder).options(joinedload(SalesOrder.part)).order_by(SalesOrder.id).offset(offset).limit(limit).all()
     return [
         {"id": so.id, "order_number": so.order_number,
          "part": so.part.part_id if so.part else None,
@@ -450,7 +450,7 @@ def db_supplier_contracts(
     offset: int = Query(default=0, ge=0),
 ) -> list[dict]:
     """Raw supplier_contracts table dump."""
-    rows = db.query(SupplierContract).order_by(SupplierContract.id).offset(offset).limit(limit).all()
+    rows = db.query(SupplierContract).options(joinedload(SupplierContract.supplier)).order_by(SupplierContract.id).offset(offset).limit(limit).all()
     return [
         {"id": c.id, "contract_number": c.contract_number,
          "supplier": c.supplier.name if c.supplier else None,
@@ -475,7 +475,7 @@ def db_scheduled_releases(
     offset: int = Query(default=0, ge=0),
 ) -> list[dict]:
     """Raw scheduled_releases table dump."""
-    rows = db.query(ScheduledRelease).order_by(ScheduledRelease.id).offset(offset).limit(limit).all()
+    rows = db.query(ScheduledRelease).options(joinedload(ScheduledRelease.contract), joinedload(ScheduledRelease.part)).order_by(ScheduledRelease.id).offset(offset).limit(limit).all()
     return [
         {"id": r.id, "release_number": r.release_number,
          "contract": r.contract.contract_number if r.contract else None,
@@ -497,7 +497,15 @@ def db_alternate_suppliers(
     offset: int = Query(default=0, ge=0),
 ) -> list[dict]:
     """Raw alternate_suppliers table dump."""
-    rows = db.query(AlternateSupplier).order_by(AlternateSupplier.id).offset(offset).limit(limit).all()
+    rows = (
+        db.query(AlternateSupplier)
+        .options(
+            joinedload(AlternateSupplier.part),
+            joinedload(AlternateSupplier.primary_supplier),
+            joinedload(AlternateSupplier.alternate_supplier),
+        )
+        .order_by(AlternateSupplier.id).offset(offset).limit(limit).all()
+    )
     return [
         {"id": a.id,
          "part": a.part.part_id if a.part else None,

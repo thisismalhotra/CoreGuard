@@ -1,5 +1,5 @@
 """
-Core-Guard Agent — MRP (Material Requirements Planning) Logic.
+Solver Agent — MRP (Material Requirements Planning) Logic.
 
 This is the "brain" of the supply chain. It receives a DEMAND_SPIKE event,
 calculates net requirements using pure Python math (Rule B: no LLM for arithmetic),
@@ -23,7 +23,7 @@ from database.models import (
     RingFenceAuditLog,
 )
 
-AGENT_NAME = "Core-Guard"
+AGENT_NAME = "Solver"
 
 # Criticality-based routing rules — determines procurement strategy per part
 ROUTING_RULES = {
@@ -55,13 +55,32 @@ def _log(db: Session, message: str, log_type: str = "info") -> dict[str, str]:
     return create_agent_log(db, AGENT_NAME, message, log_type)
 
 
-def _explode_bom(db: Session, part_id: int, demand_qty: int) -> list[dict]:
+def _explode_bom(
+    db: Session,
+    part_id: int,
+    demand_qty: int,
+    _visited: set[int] | None = None,
+) -> list[dict]:
     """
     Recursively explode BOM to find leaf-level component requirements.
 
     Returns list of {"part": Part, "inventory": Inventory, "required": int}
     for every leaf component (no children in BOM).
+
+    Tracks visited part IDs to detect circular BOM references and prevent
+    infinite recursion.
     """
+    if _visited is None:
+        _visited = set()
+
+    if part_id in _visited:
+        # Circular BOM reference detected — treat as leaf to break the cycle
+        part = db.query(Part).filter(Part.id == part_id).first()
+        inventory = part.inventory if part else None
+        return [{"part": part, "inventory": inventory, "required": demand_qty}]
+
+    _visited.add(part_id)
+
     bom_entries = db.query(BOMEntry).filter(BOMEntry.parent_id == part_id).all()
 
     if not bom_entries:
@@ -73,7 +92,7 @@ def _explode_bom(db: Session, part_id: int, demand_qty: int) -> list[dict]:
     leaf_requirements = []
     for bom in bom_entries:
         child_qty = demand_qty * bom.quantity_per
-        child_leaves = _explode_bom(db, bom.component_id, child_qty)
+        child_leaves = _explode_bom(db, bom.component_id, child_qty, _visited)
         leaf_requirements.extend(child_leaves)
 
     # Aggregate requirements for the same part (shared components across sub-assemblies)

@@ -35,9 +35,9 @@ Manufacturing/distribution supply chains are run by a 6–8 person relay race of
 
 | Persona | Core Pain Today | What Core-Guard Gives Them |
 |---|---|---|
-| Demand Planner | 3 days in Excel building pivot tables | Aura surfaces Forecast Recommendation Cards to review and approve |
-| Material / Inventory Planner | 5,000-line shortage spreadsheet every morning | Part Agents alert proactively; Core-Guard shows exact shortage with math |
-| Buyer / Procurement Specialist | "Swivel-chair" data entry from engineering PDFs | Ghost-Writer drafts the PO automatically; buyer clicks Approve |
+| Demand Planner | 3 days in Excel building pivot tables | Scout surfaces Forecast Recommendation Cards to review and approve |
+| Material / Inventory Planner | 5,000-line shortage spreadsheet every morning | Pulse agents alert proactively; Solver shows exact shortage with math |
+| Buyer / Procurement Specialist | "Swivel-chair" data entry from engineering PDFs | Buyer drafts the PO automatically; buyer clicks Approve |
 | S&OP Leader / Data Analyst | 2 days to answer one CEO question | Lumina answers in plain English in 3 seconds |
 | VP of Supply Chain | Reactive weekly reports of what broke | Real-time dashboard with predicted shortages and blast radius |
 
@@ -51,12 +51,12 @@ All agents operate under **Bounded Autonomy** — math is deterministic Python, 
 
 | Agent | Role | Execution Risk |
 |---|---|---|
-| **AURA** | Predictive Demand Sensing — monitors CRM, Shopify, logistics data; issues plain-English shortage forecasts | ZERO — read-only |
-| **THE PART AGENT** | Digital Twin for every SKU — calculates dynamic safety stock, real-time burn rate, runway | ZERO — alerts only |
-| **CORE-GUARD (MRP)** | Master Math Engine — BOM explosion, Net Requirements, digital ring-fencing of inventory | ZERO — drafts To-Buy list |
-| **GHOST-WRITER** | Autonomous PO Drafter — takes Core-Guard's math and drafts a complete, formatted Purchase Order | ZERO — drafts only; human must Approve |
+| **SCOUT** | Predictive Demand Sensing — monitors CRM, Shopify, logistics data; issues plain-English shortage forecasts | ZERO — read-only |
+| **PULSE** | Digital Twin for every SKU — calculates dynamic safety stock, real-time burn rate, runway | ZERO — alerts only |
+| **SOLVER (MRP)** | Master Math Engine — BOM explosion, Net Requirements, digital ring-fencing of inventory | ZERO — drafts To-Buy list |
+| **BUYER** | Autonomous PO Drafter — takes Solver's math and drafts a complete, formatted Purchase Order | ZERO — drafts only; human must Approve |
 | **PRISM** | Engineering Decoder — reads CAD PDFs, extracts GD&T specs, materials, tolerances | ZERO — read-only |
-| **EAGLE-EYE** | Quality Gate — compares supplier inspection reports against Prism-extracted blueprint specs | ZERO — quarantines; human decides |
+| **INSPECTOR** | Quality Gate — compares supplier inspection reports against Prism-extracted blueprint specs | ZERO — quarantines; human decides |
 | **LUMINA** | Conversational BI — translates plain-English questions into SQL; generates charts; sends Monday Briefs | ZERO — read-only analytics |
 | **APEX** *(planned)* | Category strategy, blanket agreements, capacity reservations for long-range forecasts | Future |
 | **MAESTRO** *(planned)* | Floor Orchestrator — machine and labor scheduling | Future |
@@ -67,7 +67,7 @@ All agents operate under **Bounded Autonomy** — math is deterministic Python, 
 ## 5. MVP Product Editions
 
 ### Edition 1 — Planner Edition (Build First)
-**Agents:** Aura + Part Agent + Core-Guard MRP
+**Agents:** Scout + Pulse + Solver MRP
 **Value Prop:** Predictive Supply Chain Copilot — "We do the math; you make the decision"
 **GTM Advantage:** Zero integration risk — reads data only, never writes to external systems
 
@@ -78,13 +78,13 @@ All agents operate under **Bounded Autonomy** — math is deterministic Python, 
 - One-Click Drafted Recommendations (math + reason + action on a single card for buyer review)
 
 ### Edition 2 — Execution Copilot (Upsell at ~6 months)
-**Agents:** Aura + Part Agent + Core-Guard MRP + Ghost-Writer
+**Agents:** Scout + Pulse + Solver MRP + Buyer
 **Value Prop:** Assisted Supply Chain Execution — "One-Click Purchasing"
 
 **Additional Capabilities:**
 - Zero-Click PO Drafting (complete formatted PO auto-generated from shortage data + supplier database)
 - Print-to-PO Translator (reads customer engineering PDFs via vision AI, no data entry)
-- The Financial Guardrail ("The Inbox") — Ghost-Writer cannot send anything; all drafts land in the Approval Inbox
+- The Financial Guardrail ("The Inbox") — Buyer cannot send anything; all drafts land in the Approval Inbox
 
 ---
 
@@ -99,7 +99,7 @@ Every backend function (MRP calculation, PO generation, agent decision) **must**
 # Required log format for ALL agent emissions
 {
   "timestamp": str,       # ISO 8601
-  "agent": str,           # "CORE_GUARD" | "PART_AGENT" | "GHOST_WRITER" | "AURA"
+  "agent": str,           # "SOLVER" | "PULSE" | "BUYER" | "SCOUT"
   "message": str,         # Plain-English description of what the agent just did
   "type": "info" | "warning" | "success" | "error"
 }
@@ -144,18 +144,18 @@ if total_cost > 5000:
 Net Requirement = (Gross Demand + Safety Stock) - (On-Hand + On-Order)
 ```
 
-### Dynamic Safety Stock (Part Agent)
+### Dynamic Safety Stock (Pulse)
 ```
 Safety Stock = (Max Daily Usage × Max Lead Time) - (Avg Daily Usage × Avg Lead Time)
 ```
 
-### Real-Time Runway (Part Agent)
+### Real-Time Runway (Pulse)
 ```
 Days to Stockout = Current On-Hand / Trailing 3-Day Velocity
 ```
 > **NOTE:** Do NOT use monthly forecast averages. Use the trailing 3-day physical burn rate.
 
-### Handshake Trigger Condition (Part Agent → Core-Guard)
+### Handshake Trigger Condition (Pulse → Solver)
 ```python
 if runway < (supplier_lead_time + safety_stock_days):
     initiate_handshake(agent_id, on_hand, burn_rate, safety_stock)
@@ -163,13 +163,13 @@ if runway < (supplier_lead_time + safety_stock_days):
 
 ---
 
-## 9. The 5-Step Execution Loop (Part Agent ↔ Core-Guard)
+## 9. The 5-Step Execution Loop (Pulse ↔ Solver)
 
-1. **Baseline Monitoring** — Part Agent calculates its own runway and dynamic safety stock continuously
-2. **Trigger Event** — A physical event occurs (demand drop-in, scrap, supplier delay) and touches the Part Agent's data in real-time
-3. **Local Validation** — Part Agent re-runs its math gate: `IF runway < lead_time + safety_stock → HANDSHAKE`
-4. **Core-Guard Handshake** — Part Agent sends a verified Crisis Signal (not raw data) with confirmed variables
-5. **Execution Draft** — Core-Guard calculates Net Requirement → Ghost-Writer drafts PO → buyer receives Approval notification
+1. **Baseline Monitoring** — Pulse calculates its own runway and dynamic safety stock continuously
+2. **Trigger Event** — A physical event occurs (demand drop-in, scrap, supplier delay) and touches Pulse's data in real-time
+3. **Local Validation** — Pulse re-runs its math gate: `IF runway < lead_time + safety_stock → HANDSHAKE`
+4. **Solver Handshake** — Pulse sends a verified Crisis Signal (not raw data) with confirmed variables
+5. **Execution Draft** — Solver calculates Net Requirement → Buyer drafts PO → buyer receives Approval notification
 
 ---
 
@@ -177,9 +177,9 @@ if runway < (supplier_lead_time + safety_stock_days):
 
 | Zone | Timeframe | Active Agents | System Behavior |
 |---|---|---|---|
-| Zone 1 — Fuzzy Forecast | 6–12+ months | Aura | Advises on blanket agreements and capacity reservations. No POs generated. Cash preserved. |
-| Zone 2 — Lead Time Horizon | 2–5 months | Core-Guard + Ghost-Writer | Forecast consumption begins. Core-Guard explodes BOM for firm orders. Ghost-Writer drafts standard POs to primary suppliers. |
-| Zone 3 — Inside Lead Time (Drop-In Crisis) | < supplier lead time | Part Agent + Core-Guard | Part Agent defends ring-fenced inventory. Ghost-Writer pivots to fastest available secondary supplier and drafts expedited PO with cost-vs-risk trade-off card. |
+| Zone 1 — Fuzzy Forecast | 6–12+ months | Scout | Advises on blanket agreements and capacity reservations. No POs generated. Cash preserved. |
+| Zone 2 — Lead Time Horizon | 2–5 months | Solver + Buyer | Forecast consumption begins. Solver explodes BOM for firm orders. Buyer drafts standard POs to primary suppliers. |
+| Zone 3 — Inside Lead Time (Drop-In Crisis) | < supplier lead time | Pulse + Solver | Pulse defends ring-fenced inventory. Buyer pivots to fastest available secondary supplier and drafts expedited PO with cost-vs-risk trade-off card. |
 
 ---
 
@@ -229,7 +229,7 @@ Follow this exact order — later steps depend on earlier ones.
 - `SocketManager` class handles all agent log emission
 - Endpoints:
   - `GET /inventory` — returns all parts with on-hand, on-order, safety stock, runway
-  - `POST /orders` — creates a new sales order; triggers Core-Guard evaluation
+  - `POST /orders` — creates a new sales order; triggers Solver evaluation
   - `POST /simulate/spike` — triggers full simulation pipeline (see Step 4)
 - Every endpoint must emit at least one Glass Box log event
 
@@ -274,12 +274,12 @@ Full pipeline trigger — every step must emit a Glass Box log:
 
 ```
 POST /simulate/spike { "sku": "FL-001-T", "spike_multiplier": 3.0 }
-  → Aura detects demand spike           → emit { agent: "AURA", type: "warning", ... }
-  → Part Agent checks runway             → emit { agent: "PART_AGENT", type: "warning", ... }
-  → Core-Guard calculates Net Req.      → emit { agent: "CORE_GUARD", type: "info", ... }
-  → Core-Guard ring-fences inventory    → emit { agent: "CORE_GUARD", type: "success", ... }
-  → Ghost-Writer drafts PO              → emit { agent: "GHOST_WRITER", type: "success", ... }
-  → Dashboard displays Approval card   → emit { agent: "GHOST_WRITER", type: "info", ... }
+  → Scout detects demand spike           → emit { agent: "SCOUT", type: "warning", ... }
+  → Pulse checks runway                 → emit { agent: "PULSE", type: "warning", ... }
+  → Solver calculates Net Req.          → emit { agent: "SOLVER", type: "info", ... }
+  → Solver ring-fences inventory        → emit { agent: "SOLVER", type: "success", ... }
+  → Buyer drafts PO                     → emit { agent: "BUYER", type: "success", ... }
+  → Dashboard displays Approval card    → emit { agent: "BUYER", type: "info", ... }
 ```
 
 ### Step 5: Frontend Dashboard (`frontend/components/CommandCenter.tsx`)
@@ -346,11 +346,11 @@ npm run dev
 ```
 Trigger: POST /simulate/spike { sku: "FL-001-T", multiplier: 3.0 }
 Expected Flow:
-  Aura detects 300% sales spike on Shopify
-  → Part Agent: CH-231 runway drops to 8 days (supplier lead time: 14 days)
-  → Core-Guard: Net Requirement = (3000 + 225) - (280 + 0) = 2945 units SHORT
-  → Core-Guard: Ring-fence existing 280 for existing VIP order
-  → Ghost-Writer: Drafts PO to Apex CNC Works for 2945 units
+  Scout detects 300% sales spike on Shopify
+  → Pulse: CH-231 runway drops to 8 days (supplier lead time: 14 days)
+  → Solver: Net Requirement = (3000 + 225) - (280 + 0) = 2945 units SHORT
+  → Solver: Ring-fence existing 280 for existing VIP order
+  → Buyer: Drafts PO to Apex CNC Works for 2945 units
   → CONSTITUTION TRIGGERED: total_cost > $5,000 → status = PENDING_APPROVAL
   → Dashboard: Approval card appears in Inbox
 ```
@@ -360,10 +360,10 @@ Expected Flow:
 Trigger: POST /simulate/supply-shock { supplier_name: "CREE Inc." }
 Expected Flow:
   CREE Inc. goes offline (simulated)
-  → Part Agent: LED-201 new runway drops (supplier lead time: 42 days)
-  → Core-Guard: Blast Radius = FL-001-T at risk, HL-002-P at risk
-  → Ghost-Writer: Cannot use CREE Inc. (offline)
-  → Ghost-Writer: Pivots to secondary supplier (Luminus Devices); drafts expedited PO
+  → Pulse: LED-201 new runway drops (supplier lead time: 42 days)
+  → Solver: Blast Radius = FL-001-T at risk, HL-002-P at risk
+  → Buyer: Cannot use CREE Inc. (offline)
+  → Buyer: Pivots to secondary supplier (Luminus Devices); drafts expedited PO
   → Dashboard: Cost-vs-risk trade-off card shown to buyer
 ```
 
@@ -371,9 +371,9 @@ Expected Flow:
 ```
 Trigger: POST /simulate/quality-fail { part_id: "CH-231", batch_size: 150 }
 Expected Flow:
-  Eagle-Eye: Compares incoming inspection report to blueprint specs
+  Inspector: Compares incoming inspection report to blueprint specs
   → Hardness / dimension tolerance out of spec
-  → Eagle-Eye: Quarantines 150 units; flags for human review
+  → Inspector: Quarantines 150 units; flags for human review
   → Dashboard: Quality alert shown with discrepancy details
   → Human clicks Override & Approve OR Reject Shipment
 ```
@@ -400,7 +400,7 @@ OUTPUT: Return JSON only.
 { "action": "...", "reason": "...", "qty": ... }
 ```
 
-> **Note:** For MVP, LangChain is NOT required. Use deterministic Python logic. LangChain is planned for production — Aura (demand prediction) and Ghost-Writer (PDF parsing) are the first candidates.
+> **Note:** For MVP, LangChain is NOT required. Use deterministic Python logic. LangChain is planned for production — Scout (demand prediction) and Buyer (PDF parsing) are the first candidates.
 
 ---
 
@@ -412,8 +412,8 @@ OUTPUT: Return JSON only.
 | Time from demand signal to drafted PO | < 5 minutes (vs. 2–4 week legacy baseline) |
 | Buyer adoption rate (logins to Approval Inbox) | > 80% of eligible buyers within 14 days |
 | PO approval rate on AI-drafted recommendations | > 85% within 30 days |
-| Part Agent alert accuracy (true positive rate) | > 95% |
-| Data-entry typos on Ghost-Writer drafted POs | Zero |
+| Pulse alert accuracy (true positive rate) | > 95% |
+| Data-entry typos on Buyer drafted POs | Zero |
 
 ### Lagging Indicators (Days 30–180)
 | Metric | Target |
@@ -428,9 +428,9 @@ OUTPUT: Return JSON only.
 ## 17. Open Questions for Engineering
 
 1. **ERP Integration (BLOCKING):** Read-only CSV export or live API for v1.0? This determines deployment complexity and sprint planning.
-2. **Phantom Assemblies:** How does Core-Guard handle intermediate sub-assemblies built in-house (not purchased)?
-3. **Part Agent Scaling:** Event-driven sleeping sentinel architecture from day one, or polling for MVP?
-4. **Aura Data Sources:** Which external feeds (port APIs, Shopify webhooks, freight delay data) are in scope for v1.0?
+2. **Phantom Assemblies:** How does Solver handle intermediate sub-assemblies built in-house (not purchased)?
+3. **Pulse Scaling:** Event-driven sleeping sentinel architecture from day one, or polling for MVP?
+4. **Scout Data Sources:** Which external feeds (port APIs, Shopify webhooks, freight delay data) are in scope for v1.0?
 
 ---
 
@@ -440,7 +440,7 @@ OUTPUT: Return JSON only.
 - ❌ ERP write-back (no writing to SAP/Oracle/NetSuite)
 - ❌ Capacity planning (Maestro agent — future)
 - ❌ Logistics routing (Pathfinder agent — future)
-- ❌ Full Eagle-Eye, Lumina, or Prism (future editions — post Planner Edition GA)
+- ❌ Full Inspector, Lumina, or Prism (future editions — post Planner Edition GA)
 
 ---
 

@@ -143,7 +143,7 @@ class ActionDetail(BaseModel):
     criticality: Optional[str] = None
 
 
-class SpikeAuraResult(BaseModel):
+class SpikeScoutResult(BaseModel):
     spike_detected: bool
     multiplier: float
 
@@ -162,7 +162,7 @@ class SpikeResponse(BaseModel):
     scenario: str = "DEMAND_SPIKE"
     sku: str
     multiplier: float
-    aura: SpikeAuraResult
+    scout: SpikeScoutResult
     mrp: SpikeMRPResult
     procurement: SpikeProcurementResult
     logs: list[GlassBoxLog]
@@ -170,7 +170,7 @@ class SpikeResponse(BaseModel):
 
 class NoSpikeResponse(BaseModel):
     status: str = "no_spike"
-    aura: dict[str, Any]
+    scout: dict[str, Any]
     logs: list[GlassBoxLog]
 
 

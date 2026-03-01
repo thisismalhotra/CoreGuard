@@ -1,15 +1,15 @@
 """
-Part Agent — Digital Twin for every SKU.
+Pulse Agent — Digital Twin for every SKU.
 
-PRD §4, §8, §9: The Part Agent continuously monitors each SKU's health,
+PRD §4, §8, §9: The Pulse Agent continuously monitors each SKU's health,
 calculates dynamic safety stock, real-time runway (days to stockout),
-and triggers a handshake to Core-Guard when runway drops below the
+and triggers a handshake to Solver when runway drops below the
 supplier lead time + safety stock buffer.
 
 Formulas (PRD §8 — all implemented in pure Python per Rule B):
   - Dynamic Safety Stock = (Max Daily Usage × Max Lead Time) - (Avg Daily Usage × Avg Lead Time)
   - Real-Time Runway = Current On-Hand / Trailing 3-Day Velocity
-  - Handshake Trigger: if runway < (supplier_lead_time + safety_stock_days) → initiate_handshake()
+  - Handshake Trigger: if runway < (supplier_lead_time + safety_stock_days) -> initiate_handshake()
 
 Stateless: operates on DB state passed in. Emits structured logs for Glass Box visibility.
 """
@@ -23,7 +23,7 @@ from sqlalchemy.orm import Session
 from agents.utils import create_agent_log
 from database.models import BOMEntry, Part
 
-AGENT_NAME = "Part-Agent"
+AGENT_NAME = "Pulse"
 
 
 def _log(db: Session, message: str, log_type: str = "info") -> dict[str, str]:
@@ -69,7 +69,7 @@ def evaluate_handshake_trigger(
     safety_stock_days: float,
 ) -> bool:
     """
-    PRD §8: Handshake Trigger Condition (Part Agent → Core-Guard).
+    PRD §8: Handshake Trigger Condition (Pulse Agent -> Solver).
 
     if runway < (supplier_lead_time + safety_stock_days):
         initiate_handshake(...)
@@ -188,7 +188,7 @@ def monitor_part(
             f"HANDSHAKE TRIGGERED for {part_id_str}: runway ({runway:.1f}d) < "
             f"threshold ({supplier_lead_time}d lead + {safety_stock_days:.1f}d safety = "
             f"{supplier_lead_time + safety_stock_days:.1f}d). "
-            f"Initiating Core-Guard handshake with verified Crisis Signal.",
+            f"Initiating Solver handshake with verified Crisis Signal.",
             "warning",
         ))
     else:
@@ -219,7 +219,7 @@ def monitor_all_components(
     demand_qty: int,
 ) -> dict[str, Any]:
     """
-    PRD §9 Steps 1-3: Run Part Agent monitoring for all BOM components of a finished good.
+    PRD §9 Steps 1-3: Run Pulse Agent monitoring for all BOM components of a finished good.
 
     Simulates the demand impact on each component's burn rate before evaluating.
     Returns aggregated results for all components with triggered handshakes.
@@ -254,7 +254,7 @@ def monitor_all_components(
 
     logs.append(_log(
         db,
-        f"Part Agent scanning {len(bom_entries)} components for {sku} "
+        f"Pulse Agent scanning {len(bom_entries)} components for {sku} "
         f"(demand: {demand_qty} units)...",
     ))
 
@@ -278,28 +278,29 @@ def monitor_all_components(
                 f"(+{additional_daily:.1f} from {demand_qty}x{bom.quantity_per} demand).",
             ))
 
-        report = monitor_part(db, component.part_id)
-        component_reports.append(report)
-        logs.extend(report["logs"])
+        try:
+            report = monitor_part(db, component.part_id)
+            component_reports.append(report)
+            logs.extend(report["logs"])
 
-        if report["handshake_triggered"] and report["crisis_signal"]:
-            crisis_signals.append(report["crisis_signal"])
-
-        # Restore original burn rate after check
-        if inv:
-            inv.daily_burn_rate = original_burn
+            if report["handshake_triggered"] and report["crisis_signal"]:
+                crisis_signals.append(report["crisis_signal"])
+        finally:
+            # Restore original burn rate after check — even if monitor_part raises
+            if inv:
+                inv.daily_burn_rate = original_burn
 
     if crisis_signals:
         logs.append(_log(
             db,
-            f"Part Agent complete: {len(crisis_signals)}/{len(bom_entries)} components "
-            f"triggered HANDSHAKE. Forwarding Crisis Signals to Core-Guard.",
+            f"Pulse Agent complete: {len(crisis_signals)}/{len(bom_entries)} components "
+            f"triggered HANDSHAKE. Forwarding Crisis Signals to Solver.",
             "warning",
         ))
     else:
         logs.append(_log(
             db,
-            f"Part Agent complete: All {len(bom_entries)} components within safe runway. "
+            f"Pulse Agent complete: All {len(bom_entries)} components within safe runway. "
             f"No handshake needed.",
             "success",
         ))

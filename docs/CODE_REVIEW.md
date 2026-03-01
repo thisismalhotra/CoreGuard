@@ -33,7 +33,7 @@ This document tracks all identified issues, bugs, and improvement opportunities 
 
 - **Category:** Bug / Data Integrity
 - **Files:** `agents/aura.py`, `agents/core_guard.py`, `agents/ghost_writer.py`, `agents/dispatcher.py`, `agents/eagle_eye.py`, `routers/simulations.py`
-- **Description:** Every agent function (`detect_demand_spike`, `calculate_net_requirements`, `triage_demand_spike`, `process_buy_orders`, `inspect_batch`) calls `db.commit()` at the end. The simulation endpoints call multiple agents sequentially on the same DB session. This means a single simulation runs 3-4 commits instead of one atomic transaction. If an error occurs mid-chain (e.g., Ghost-Writer fails after Core-Guard committed), the database is left in a partially mutated state with no way to roll back.
+- **Description:** Every agent function (`detect_demand_spike`, `calculate_net_requirements`, `triage_demand_spike`, `process_buy_orders`, `inspect_batch`) calls `db.commit()` at the end. The simulation endpoints call multiple agents sequentially on the same DB session. This means a single simulation runs 3-4 commits instead of one atomic transaction. If an error occurs mid-chain (e.g., Buyer fails after Solver committed), the database is left in a partially mutated state with no way to roll back.
 - **Fix:** Remove `db.commit()` from all agent functions. Each agent should only `db.flush()` (which it already does for log IDs). Let the simulation endpoint perform a single `db.commit()` at the end, wrapping the entire chain in one transaction. On failure, the session rolls back automatically.
 
 ### 2. CORS Wildcard with Credentials Enabled
@@ -79,7 +79,7 @@ This document tracks all identified issues, bugs, and improvement opportunities 
 
 - **Category:** Bug
 - **File:** `routers/simulations.py` (lines 49-59, 172-173)
-- **Description:** `_sys_log` creates an `AgentLog` DB record with `agent="System"` and returns a dict also with `agent: "System"`. But in several places the returned dict's `agent` key is overwritten to `"Core-Guard"` *after* the DB record was already created. The DB record and the Socket.io emitted log disagree on which agent produced the message.
+- **Description:** `_sys_log` creates an `AgentLog` DB record with `agent="System"` and returns a dict also with `agent: "System"`. But in several places the returned dict's `agent` key is overwritten to `"Solver"` *after* the DB record was already created. The DB record and the Socket.io emitted log disagree on which agent produced the message.
 - **Fix:** Pass the correct agent name to `_sys_log` as a parameter, or create a separate helper that accepts and stores the agent name consistently.
 
 ### 8. Unbounded Log Array Growth in Frontend
@@ -165,13 +165,13 @@ This document tracks all identified issues, bugs, and improvement opportunities 
 - **Category:** Bug / Logic
 - **File:** `routers/simulations.py` (line 181)
 - **Description:** Emergency order quantity is set to `inv.safety_stock` rather than the actual shortfall. If a part has 500 on-hand but safety stock of 200, the system orders 200 more regardless.
-- **Fix:** Use a meaningful calculation like `max(inv.safety_stock - inv.available, inv.safety_stock)` or route through Core-Guard's MRP logic.
+- **Fix:** Use a meaningful calculation like `max(inv.safety_stock - inv.available, inv.safety_stock)` or route through Solver's MRP logic.
 
-### 19. Eagle-Eye Reorders from the Same Failing Supplier
+### 19. Inspector Reorders from the Same Failing Supplier
 
 - **Category:** Bug / Logic
 - **File:** `agents/eagle_eye.py` (lines 164-173)
-- **Description:** When a batch fails quality inspection, Eagle-Eye creates a BUY_ORDER using the same supplier that just sent defective parts.
+- **Description:** When a batch fails quality inspection, Inspector creates a BUY_ORDER using the same supplier that just sent defective parts.
 - **Fix:** Query for an alternate supplier with better reliability before generating the buy order, or flag the reorder for alternate supplier evaluation.
 
 ### 20. `Inventory.available` Can Return Negative Values
@@ -266,7 +266,7 @@ This document tracks all identified issues, bugs, and improvement opportunities 
 
 - **Category:** Code Quality
 - **File:** `agents/ghost_writer.py` (line 25)
-- **Description:** Ghost-Writer generates PDFs to `backend/generated_pos/`. If not in `.gitignore`, generated PDFs could be accidentally committed.
+- **Description:** Buyer generates PDFs to `backend/generated_pos/`. If not in `.gitignore`, generated PDFs could be accidentally committed.
 - **Fix:** Add `backend/generated_pos/` to `.gitignore`.
 
 ### 33. `DemandForecast.period` Defaults to `"2025-Q1"`
@@ -301,7 +301,7 @@ This document tracks all identified issues, bugs, and improvement opportunities 
 
 - **Category:** Documentation
 - **File:** `CLAUDE.md` (lines 31-32)
-- **Description:** Listed as part of the tech stack but neither is used anywhere. Eagle-Eye mentions Pinecone as "AI Handover" for production only.
+- **Description:** Listed as part of the tech stack but neither is used anywhere. Inspector mentions Pinecone as "AI Handover" for production only.
 - **Fix:** Add a note that these are "planned for production" or remove from tech stack.
 
 ### 38. `Inventory.last_updated` Never Updated on Mutations
@@ -365,7 +365,7 @@ This document tracks all identified issues, bugs, and improvement opportunities 
 9. Wire up Pydantic response models to endpoints (#14, #15)
 10. Centralize API calls in AgentsPage and DBViewer (#16, #17)
 11. Fix `Inventory.available` negative values (#20)
-12. Fix Eagle-Eye reorder supplier logic (#19)
+12. Fix Inspector reorder supplier logic (#19)
 13. Add error banners for offline backend (#23)
 14. Smart auto-scroll in LiveLogs (#42 — listed as Low but high UX impact)
 

@@ -6,10 +6,12 @@ logs to connected dashboards via Socket.io.
 """
 
 import asyncio
+import os
+import threading
 from datetime import datetime, timedelta, timezone
-from typing import Any
+from typing import Any, Optional, Union
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
 from sqlalchemy.orm import Session
 
 from agents.aura import detect_demand_spike
@@ -46,6 +48,7 @@ from schemas import (
     MilitarySurgeResponse,
     MOQTrapResponse,
     MultiSkuContentionResponse,
+    NoSpikeResponse,
     QualityFailResponse,
     ResetResponse,
     SeasonalRampResponse,
@@ -61,6 +64,9 @@ router = APIRouter(prefix="/api/simulate", tags=["simulations"])
 # Socket.io and log delay are stored on app.state by main.py.
 # These module-level references are set once at startup via init_sio().
 _app_state = None
+
+# Serialize destructive operations (reset) to prevent concurrent table drops
+_reset_lock = threading.Lock()
 
 
 def init_sio(app_state):
@@ -99,7 +105,7 @@ def _sys_log(db: Session, msg: str, log_type: str = "info", agent: str = "System
 # Scenario A: Demand Spike
 # ---------------------------------------------------------------------------
 
-@router.post("/spike", response_model=SpikeResponse)
+@router.post("/spike", response_model=Union[SpikeResponse, NoSpikeResponse])
 @limiter.limit("5/minute")
 async def simulate_demand_spike(
     request: Request,
@@ -109,7 +115,7 @@ async def simulate_demand_spike(
 ) -> dict[str, Any]:
     """
     Scenario A: Simulate a demand spike.
-    Full agent chain: Aura -> Dispatcher -> Core-Guard -> Ghost-Writer.
+    Full agent chain: Scout -> Router -> Solver -> Buyer.
     """
     all_logs: list[dict[str, str]] = []
 
@@ -126,33 +132,33 @@ async def simulate_demand_spike(
 
     # ---------------------------------------------------------------
     # PRD §9: 5-Step Execution Loop
-    # Step 1: AURA — Demand spike detection (Trigger Event)
+    # Step 1: SCOUT — Demand spike detection (Trigger Event)
     # ---------------------------------------------------------------
     aura_result = detect_demand_spike(db, sku, spiked_qty)
     all_logs.extend(aura_result["logs"])
     await emit_logs(aura_result["logs"])
 
     if not aura_result["spike_detected"]:
-        return {"status": "no_spike", "aura": aura_result, "logs": all_logs}
+        return {"status": "no_spike", "scout": aura_result, "logs": all_logs}
 
     # ---------------------------------------------------------------
-    # Step 2: PART AGENT — Baseline Monitoring + Local Validation (PRD §9 Steps 1-3)
-    # Each Part Agent checks its own runway and dynamic safety stock
+    # Step 2: PULSE — Baseline Monitoring + Local Validation (PRD §9 Steps 1-3)
+    # Each Pulse agent checks its own runway and dynamic safety stock
     # ---------------------------------------------------------------
     part_agent_result = monitor_all_components(db, sku, spiked_qty)
     all_logs.extend(part_agent_result["logs"])
     await emit_logs(part_agent_result["logs"])
 
     # ---------------------------------------------------------------
-    # Step 3: DISPATCHER — Triage components by criticality
+    # Step 3: ROUTER — Triage components by criticality
     # ---------------------------------------------------------------
     dispatch_result = triage_demand_spike(db, sku, spiked_qty)
     all_logs.extend(dispatch_result["logs"])
     await emit_logs(dispatch_result["logs"])
 
     # ---------------------------------------------------------------
-    # Step 4: CORE-GUARD — MRP explosion + ring-fencing (PRD §9 Steps 4-5)
-    # Core-Guard receives verified Crisis Signals from Part Agent
+    # Step 4: SOLVER — MRP explosion + ring-fencing (PRD §9 Steps 4-5)
+    # Solver receives verified Crisis Signals from Pulse
     # ---------------------------------------------------------------
     mrp_result = calculate_net_requirements(db, sku, spiked_qty)
     all_logs.extend(mrp_result["logs"])
@@ -170,7 +176,7 @@ async def simulate_demand_spike(
         await emit_logs(blast_result["logs"])
 
     # ---------------------------------------------------------------
-    # Step 5: GHOST-WRITER — Draft Purchase Orders
+    # Step 5: BUYER — Draft Purchase Orders
     # ---------------------------------------------------------------
     buy_orders = [a for a in mrp_result["actions"] if a["type"] == "BUY_ORDER"]
 
@@ -180,7 +186,7 @@ async def simulate_demand_spike(
         all_logs.extend(ghost_result["logs"])
         await emit_logs(ghost_result["logs"])
 
-    # Single atomic commit — all agent work (Aura, Part Agent, Dispatcher, Core-Guard, Ghost-Writer)
+    # Single atomic commit — all agent work (Scout, Pulse, Router, Solver, Buyer)
     # is flushed during execution; we commit once at the end of the simulation.
     db.commit()
 
@@ -189,7 +195,7 @@ async def simulate_demand_spike(
         "scenario": "DEMAND_SPIKE",
         "sku": sku,
         "multiplier": multiplier,
-        "aura": {
+        "scout": {
             "spike_detected": aura_result["spike_detected"],
             "multiplier": aura_result["multiplier"],
         },
@@ -241,11 +247,11 @@ async def simulate_supply_shock(
         if not inv:
             continue
 
-        log = _sys_log(db, f"Assessing impact: {part.part_id} ({part.description}) — primary supplier {supplier_name} offline.", "warning", agent="Core-Guard")
+        log = _sys_log(db, f"Assessing impact: {part.part_id} ({part.description}) — primary supplier {supplier_name} offline.", "warning", agent="Solver")
         all_logs.append(log)
         await emit_logs([log])
 
-        log = _sys_log(db, f"Inventory check: {part.part_id} — on_hand={inv.on_hand}, safety_stock={inv.safety_stock}, available={inv.available}.", "info", agent="Core-Guard")
+        log = _sys_log(db, f"Inventory check: {part.part_id} — on_hand={inv.on_hand}, safety_stock={inv.safety_stock}, available={inv.available}.", "info", agent="Solver")
         all_logs.append(log)
         await emit_logs([log])
 
@@ -260,7 +266,7 @@ async def simulate_supply_shock(
         )
 
         if not alternate:
-            log = _sys_log(db, f"CRITICAL: No alternate suppliers available for {part.part_id}!", "error", agent="Core-Guard")
+            log = _sys_log(db, f"CRITICAL: No alternate suppliers available for {part.part_id}!", "error", agent="Solver")
             all_logs.append(log)
             await emit_logs([log])
             continue
@@ -270,7 +276,7 @@ async def simulate_supply_shock(
             f"Switching {part.part_id} to alternate supplier: {alternate.name} "
             f"(reliability: {alternate.reliability_score}, lead time: {alternate.lead_time_days}d).",
             "info",
-            agent="Core-Guard",
+            agent="Solver",
         )
         all_logs.append(log)
         await emit_logs([log])
@@ -283,7 +289,7 @@ async def simulate_supply_shock(
             "total_cost": round(order_qty * part.unit_cost, 2),
             "supplier_id": alternate.id,
             "supplier_name": alternate.name,
-            "triggered_by": "Core-Guard",
+            "triggered_by": "Solver",
         })
 
         log = _sys_log(
@@ -291,33 +297,37 @@ async def simulate_supply_shock(
             f"Emergency BUY_ORDER: {order_qty}x {part.part_id} from {alternate.name} "
             f"@ ${round(order_qty * part.unit_cost, 2):.2f}.",
             "warning",
-            agent="Core-Guard",
+            agent="Solver",
         )
         all_logs.append(log)
         await emit_logs([log])
 
-    # Part Agent: Recalculate runway with supplier offline
+    # Pulse: Recalculate runway with supplier offline
     for part in affected_parts:
         pa_result = monitor_part(db, part.part_id)
         all_logs.extend(pa_result["logs"])
         await emit_logs(pa_result["logs"])
 
-    # Step 3: Ghost-Writer processes emergency POs
+    # Step 3: Buyer processes emergency POs
     ghost_result: dict[str, Any] = {"purchase_orders": [], "logs": []}
     if emergency_orders:
         ghost_result = process_buy_orders(db, emergency_orders)
         all_logs.extend(ghost_result["logs"])
         await emit_logs(ghost_result["logs"])
 
-    summary = _sys_log(
+    # Re-enable the supplier so the simulation doesn't permanently corrupt DB state
+    supplier.is_active = True
+    db.flush()
+
+    log = _sys_log(
         db,
-        f"Supply shock response complete: {supplier_name} disabled, "
-        f"{len(affected_parts)} part(s) affected, "
+        f"Supply shock simulation complete: {supplier_name} re-enabled. "
+        f"{len(affected_parts)} part(s) were affected, "
         f"{len(ghost_result['purchase_orders'])} emergency PO(s) generated.",
         "success",
     )
-    all_logs.append(summary)
-    await emit_logs([summary])
+    all_logs.append(log)
+    await emit_logs([log])
 
     # Single atomic commit for the entire supply-shock simulation
     db.commit()
@@ -353,7 +363,7 @@ async def simulate_quality_fail(
     all_logs.extend(inspection_result["logs"])
     await emit_logs(inspection_result["logs"])
 
-    # Part Agent: Recalculate runway after quarantine reduces effective on-hand
+    # Pulse: Recalculate runway after quarantine reduces effective on-hand
     pa_result = monitor_part(db, part_id)
     all_logs.extend(pa_result["logs"])
     await emit_logs(pa_result["logs"])
@@ -409,7 +419,7 @@ async def simulate_cascade_failure(
     all_logs.append(log)
     await emit_logs([log])
 
-    # Act 2: Aura detects the spike
+    # Act 2: Scout detects the spike
     forecast = db.query(DemandForecast).join(Part).filter(Part.part_id == "FL-001-T").first()
     if not forecast:
         raise HTTPException(status_code=404, detail="No forecast found for FL-001-T")
@@ -419,17 +429,17 @@ async def simulate_cascade_failure(
     all_logs.extend(aura_result["logs"])
     await emit_logs(aura_result["logs"])
 
-    # Part Agent: Baseline monitoring under dual crisis
+    # Pulse: Baseline monitoring under dual crisis
     part_agent_result = monitor_all_components(db, "FL-001-T", spiked_qty)
     all_logs.extend(part_agent_result["logs"])
     await emit_logs(part_agent_result["logs"])
 
-    # Act 2.5: Dispatcher triages
+    # Act 2.5: Router triages
     dispatch_result = triage_demand_spike(db, "FL-001-T", spiked_qty)
     all_logs.extend(dispatch_result["logs"])
     await emit_logs(dispatch_result["logs"])
 
-    # Act 3: Core-Guard runs MRP
+    # Act 3: Solver runs MRP
     mrp_result = calculate_net_requirements(db, "FL-001-T", spiked_qty)
     all_logs.extend(mrp_result["logs"])
     await emit_logs(mrp_result["logs"])
@@ -451,7 +461,7 @@ async def simulate_cascade_failure(
                     db,
                     f"Primary supplier {part.supplier.name} OFFLINE. Rerouting {order['part_id']} order to {alternate.name} (reliability: {alternate.reliability_score}).",
                     "warning",
-                    agent="Core-Guard",
+                    agent="Solver",
                 )
                 all_logs.append(log)
                 await emit_logs([log])
@@ -459,7 +469,7 @@ async def simulate_cascade_failure(
                 order["supplier_name"] = alternate.name
         rerouted_orders.append(order)
 
-    # Act 5: Ghost-Writer handles all emergency POs
+    # Act 5: Buyer handles all emergency POs
     ghost_result: dict[str, Any] = {"purchase_orders": [], "logs": []}
     if rerouted_orders:
         ghost_result = process_buy_orders(db, rerouted_orders)
@@ -528,7 +538,7 @@ async def simulate_constitution_breach(
 
     log = _sys_log(
         db,
-        f"Core-Guard generated {len(buy_orders)} BUY_ORDER(s). Forwarding to Ghost-Writer for cost validation...",
+        f"Solver generated {len(buy_orders)} BUY_ORDER(s). Forwarding to Buyer for cost validation...",
         "info",
     )
     all_logs.append(log)
@@ -603,7 +613,7 @@ async def simulate_full_blackout(
     all_logs.extend(aura_result["logs"])
     await emit_logs(aura_result["logs"])
 
-    # Part Agent: Assess runway with no supplier path
+    # Pulse: Assess runway with no supplier path
     part_agent_result = monitor_all_components(db, "FL-001-T", spiked_qty)
     all_logs.extend(part_agent_result["logs"])
     await emit_logs(part_agent_result["logs"])
@@ -621,7 +631,7 @@ async def simulate_full_blackout(
     for order in buy_orders:
         log = _sys_log(
             db,
-            f"Core-Guard attempting to source {order['quantity']}x {order['part_id']}... scanning {len(all_suppliers)} suppliers.",
+            f"Solver attempting to source {order['quantity']}x {order['part_id']}... scanning {len(all_suppliers)} suppliers.",
             "warning",
         )
         all_logs.append(log)
@@ -643,7 +653,7 @@ async def simulate_full_blackout(
 
     log = _sys_log(
         db,
-        "SYSTEM HALT: Core-Guard has exhausted all procurement options. "
+        "SYSTEM HALT: Solver has exhausted all procurement options. "
         "Manual intervention required. Escalating to COO.",
         "error",
     )
@@ -683,7 +693,7 @@ async def simulate_slow_bleed(
     """
     Scenario G: Simulate a gradual burn rate increase (Slow Bleed).
 
-    The Part Agent is the ONLY agent that detects this invisible crisis —
+    Pulse is the ONLY agent that detects this invisible crisis —
     no demand spike, no supplier failure — just a creeping burn rate increase
     that erodes runway day by day.
     """
@@ -711,99 +721,99 @@ async def simulate_slow_bleed(
     multipliers = [1.0, 1.375, 1.75, 2.125]
     runway_progression: list[dict[str, Any]] = []
     handshake_triggered = False
-
-    for day_num, mult in enumerate(multipliers, start=1):
-        simulated_rate = round(original_burn_rate * mult, 2)
-        inv.daily_burn_rate = simulated_rate
-        db.flush()
-
-        log = _sys_log(
-            db,
-            f"Day {day_num}: Burn rate for {part_id} now {simulated_rate}/day "
-            f"({mult:.3f}x baseline {original_burn_rate}/day).",
-            "info",
-            agent="Part-Agent",
-        )
-        all_logs.append(log)
-        await emit_logs([log])
-
-        # Part Agent monitors the SKU
-        result = monitor_part(db, part_id)
-        all_logs.extend(result["logs"])
-        await emit_logs(result["logs"])
-
-        runway_progression.append({
-            "day": day_num,
-            "burn_rate": simulated_rate,
-            "runway_days": result["runway_days"],
-            "handshake_triggered": result["handshake_triggered"],
-        })
-
-        if result["handshake_triggered"] and not handshake_triggered:
-            handshake_triggered = True
-
-            log = _sys_log(
-                db,
-                f"SLOW BLEED DETECTED on Day {day_num}: Part Agent identified runway decline for {part_id}. "
-                f"Burn rate crept from {original_burn_rate}/day to {simulated_rate}/day. "
-                f"Escalating to Core-Guard.",
-                "error",
-                agent="Part-Agent",
-            )
-            all_logs.append(log)
-            await emit_logs([log])
-
-    # If handshake triggered: find parent finished good via BOM, run MRP + procurement
     ghost_result: dict[str, Any] = {"purchase_orders": [], "logs": []}
 
-    if handshake_triggered:
-        # Find the parent finished good that uses this part
-        bom_entry = db.query(BOMEntry).filter(BOMEntry.component_id == part.id).first()
-        if bom_entry:
-            parent_part = bom_entry.parent
-            parent_sku = parent_part.part_id
+    try:
+        for day_num, mult in enumerate(multipliers, start=1):
+            simulated_rate = round(original_burn_rate * mult, 2)
+            inv.daily_burn_rate = simulated_rate
+            db.flush()
 
             log = _sys_log(
                 db,
-                f"Tracing {part_id} upstream via BOM → parent finished good: {parent_sku} ({parent_part.description}).",
+                f"Day {day_num}: Burn rate for {part_id} now {simulated_rate}/day "
+                f"({mult:.3f}x baseline {original_burn_rate}/day).",
                 "info",
-                agent="Core-Guard",
+                agent="Pulse",
             )
             all_logs.append(log)
             await emit_logs([log])
 
-            # Run Core-Guard MRP for the parent SKU with current demand
-            forecast = (
-                db.query(DemandForecast)
-                .join(Part)
-                .filter(Part.part_id == parent_sku)
-                .first()
-            )
-            demand_qty = forecast.forecast_qty if forecast else 200
+            # Pulse monitors the SKU
+            result = monitor_part(db, part_id)
+            all_logs.extend(result["logs"])
+            await emit_logs(result["logs"])
 
-            mrp_result = calculate_net_requirements(db, parent_sku, demand_qty)
-            all_logs.extend(mrp_result["logs"])
-            await emit_logs(mrp_result["logs"])
+            runway_progression.append({
+                "day": day_num,
+                "burn_rate": simulated_rate,
+                "runway_days": result["runway_days"],
+                "handshake_triggered": result["handshake_triggered"],
+            })
 
-            # Ghost-Writer processes any buy orders
-            buy_orders = [a for a in mrp_result["actions"] if a["type"] == "BUY_ORDER"]
-            if buy_orders:
-                ghost_result = process_buy_orders(db, buy_orders)
-                all_logs.extend(ghost_result["logs"])
-                await emit_logs(ghost_result["logs"])
-        else:
-            log = _sys_log(
-                db,
-                f"No parent finished good found for {part_id} in BOM. Cannot escalate upstream.",
-                "warning",
-                agent="Core-Guard",
-            )
-            all_logs.append(log)
-            await emit_logs([log])
+            if result["handshake_triggered"] and not handshake_triggered:
+                handshake_triggered = True
 
-    # Restore original burn rate
-    inv.daily_burn_rate = original_burn_rate
-    db.flush()
+                log = _sys_log(
+                    db,
+                    f"SLOW BLEED DETECTED on Day {day_num}: Pulse identified runway decline for {part_id}. "
+                    f"Burn rate crept from {original_burn_rate}/day to {simulated_rate}/day. "
+                    f"Escalating to Solver.",
+                    "error",
+                    agent="Pulse",
+                )
+                all_logs.append(log)
+                await emit_logs([log])
+
+        # If handshake triggered: find parent finished good via BOM, run MRP + procurement
+        if handshake_triggered:
+            # Find the parent finished good that uses this part
+            bom_entry = db.query(BOMEntry).filter(BOMEntry.component_id == part.id).first()
+            if bom_entry:
+                parent_part = bom_entry.parent
+                parent_sku = parent_part.part_id
+
+                log = _sys_log(
+                    db,
+                    f"Tracing {part_id} upstream via BOM → parent finished good: {parent_sku} ({parent_part.description}).",
+                    "info",
+                    agent="Solver",
+                )
+                all_logs.append(log)
+                await emit_logs([log])
+
+                # Run Solver MRP for the parent SKU with current demand
+                forecast = (
+                    db.query(DemandForecast)
+                    .join(Part)
+                    .filter(Part.part_id == parent_sku)
+                    .first()
+                )
+                demand_qty = forecast.forecast_qty if forecast else 200
+
+                mrp_result = calculate_net_requirements(db, parent_sku, demand_qty)
+                all_logs.extend(mrp_result["logs"])
+                await emit_logs(mrp_result["logs"])
+
+                # Buyer processes any buy orders
+                buy_orders = [a for a in mrp_result["actions"] if a["type"] == "BUY_ORDER"]
+                if buy_orders:
+                    ghost_result = process_buy_orders(db, buy_orders)
+                    all_logs.extend(ghost_result["logs"])
+                    await emit_logs(ghost_result["logs"])
+            else:
+                log = _sys_log(
+                    db,
+                    f"No parent finished good found for {part_id} in BOM. Cannot escalate upstream.",
+                    "warning",
+                    agent="Solver",
+                )
+                all_logs.append(log)
+                await emit_logs([log])
+    finally:
+        # Restore original burn rate — even if an exception occurred
+        inv.daily_burn_rate = original_burn_rate
+        db.flush()
 
     summary_msg = (
         f"Slow Bleed simulation complete for {part_id}: "
@@ -845,9 +855,9 @@ async def simulate_inventory_decay(
     Scenario H: Inventory Decay — Ghost inventory and stale stock detection.
 
     3-act story:
-      Act 1: Part Agent runs baseline check — everything looks fine.
-      Act 2: Inject decay conditions, Data Integrity reveals ghost/suspect stock.
-      Act 3: Part Agent re-evaluates with corrected inventory, triggers crisis if needed.
+      Act 1: Pulse runs baseline check — everything looks fine.
+      Act 2: Inject decay conditions, Auditor reveals ghost/suspect stock.
+      Act 3: Pulse re-evaluates with corrected inventory, triggers crisis if needed.
     """
     all_logs: list[dict[str, str]] = []
 
@@ -860,9 +870,9 @@ async def simulate_inventory_decay(
     await emit_logs([log])
 
     # ---------------------------------------------------------------
-    # Act 1: Part Agent runs baseline check — everything looks fine
+    # Act 1: Pulse runs baseline check — everything looks fine
     # ---------------------------------------------------------------
-    log = _sys_log(db, "Act 1: Part Agent baseline check on FL-001-T components...", "info")
+    log = _sys_log(db, "Act 1: Pulse baseline check on FL-001-T components...", "info")
     all_logs.append(log)
     await emit_logs([log])
 
@@ -880,7 +890,7 @@ async def simulate_inventory_decay(
     await emit_logs([log])
 
     # ---------------------------------------------------------------
-    # Act 2: Inject decay conditions — Data Integrity reveals the truth
+    # Act 2: Inject decay conditions — Auditor reveals the truth
     # ---------------------------------------------------------------
     log = _sys_log(db, "Act 2: Injecting inventory decay conditions...", "warning")
     all_logs.append(log)
@@ -921,8 +931,8 @@ async def simulate_inventory_decay(
         all_logs.append(log)
         await emit_logs([log])
 
-    # Run Data Integrity full check
-    log = _sys_log(db, "Running Data Integrity Agent full scan...", "info", agent="Data-Integrity")
+    # Run Auditor full check
+    log = _sys_log(db, "Running Auditor full scan...", "info", agent="Auditor")
     all_logs.append(log)
     await emit_logs([log])
 
@@ -935,7 +945,7 @@ async def simulate_inventory_decay(
 
     log = _sys_log(
         db,
-        f"Data Integrity reveals: {len(ghost_parts)} ghost part(s), "
+        f"Auditor reveals: {len(ghost_parts)} ghost part(s), "
         f"{len(suspect_parts)} suspect part(s). Inventory cannot be trusted as-is.",
         "error" if (ghost_parts or suspect_parts) else "success",
     )
@@ -943,7 +953,7 @@ async def simulate_inventory_decay(
     await emit_logs([log])
 
     # ---------------------------------------------------------------
-    # Act 3: Part Agent re-evaluates with corrected inventory
+    # Act 3: Pulse re-evaluates with corrected inventory
     # ---------------------------------------------------------------
     log = _sys_log(
         db,
@@ -967,12 +977,12 @@ async def simulate_inventory_decay(
                 f"{original_on_hand_values[ghost['part_id']]} to {ghost_inv.on_hand} "
                 f"(50% reduction pending physical count).",
                 "warning",
-                agent="Data-Integrity",
+                agent="Auditor",
             )
             all_logs.append(log)
             await emit_logs([log])
 
-    # Re-run Part Agent monitoring with corrected numbers
+    # Re-run Pulse monitoring with corrected numbers
     corrected_result = monitor_all_components(db, "FL-001-T", 100)
     all_logs.extend(corrected_result["logs"])
     await emit_logs(corrected_result["logs"])
@@ -989,9 +999,9 @@ async def simulate_inventory_decay(
         log = _sys_log(
             db,
             f"CRISIS DETECTED: {len(corrected_result['crisis_signals'])} component(s) in crisis "
-            f"after ghost inventory correction. Escalating to Core-Guard.",
+            f"after ghost inventory correction. Escalating to Solver.",
             "error",
-            agent="Part-Agent",
+            agent="Pulse",
         )
         all_logs.append(log)
         await emit_logs([log])
@@ -1067,10 +1077,10 @@ async def simulate_multi_sku_contention(
     CH-231 is shared: 1x per Tactical, 1x per Standard = 500 chassis needed total.
 
     4-act story:
-      Act 1: Part Agent monitors CH-231 for FL-001-T demand — looks manageable.
-      Act 2: Part Agent monitors CH-231 for FL-001-S demand — still looks ok.
+      Act 1: Pulse monitors CH-231 for FL-001-T demand — looks manageable.
+      Act 2: Pulse monitors CH-231 for FL-001-S demand — still looks ok.
       Act 3: Contention detected — combined burn rate overwhelms CH-231 runway.
-      Act 4: Core-Guard applies criticality-based prioritization and procures.
+      Act 4: Solver applies criticality-based prioritization and procures.
     """
     all_logs: list[dict[str, str]] = []
 
@@ -1088,9 +1098,9 @@ async def simulate_multi_sku_contention(
     await emit_logs([log])
 
     # ---------------------------------------------------------------
-    # Act 1: Part Agent monitors CH-231 for FL-001-T demand
+    # Act 1: Pulse monitors CH-231 for FL-001-T demand
     # ---------------------------------------------------------------
-    log = _sys_log(db, f"Act 1: Part Agent monitoring {shared_component} for FL-001-T demand ({tactical_demand} units × 1 per = {tactical_demand} chassis)...", "info")
+    log = _sys_log(db, f"Act 1: Pulse monitoring {shared_component} for FL-001-T demand ({tactical_demand} units × 1 per = {tactical_demand} chassis)...", "info")
     all_logs.append(log)
     await emit_logs([log])
 
@@ -1108,9 +1118,9 @@ async def simulate_multi_sku_contention(
     await emit_logs([log])
 
     # ---------------------------------------------------------------
-    # Act 2: Part Agent monitors CH-231 for FL-001-S demand
+    # Act 2: Pulse monitors CH-231 for FL-001-S demand
     # ---------------------------------------------------------------
-    log = _sys_log(db, f"Act 2: Part Agent monitoring {shared_component} for FL-001-S demand ({standard_demand} units × 1 per = {standard_demand} chassis)...", "info")
+    log = _sys_log(db, f"Act 2: Pulse monitoring {shared_component} for FL-001-S demand ({standard_demand} units × 1 per = {standard_demand} chassis)...", "info")
     all_logs.append(log)
     await emit_logs([log])
 
@@ -1151,42 +1161,43 @@ async def simulate_multi_sku_contention(
     shared_inv.daily_burn_rate = contention_burn_rate
     db.flush()
 
-    log = _sys_log(
-        db,
-        f"Combined burn rate for {shared_component}: {original_burn_rate:.1f}/day → {contention_burn_rate:.1f}/day "
-        f"(+{combined_additional_burn:.1f} from {tactical_demand}×1 + {standard_demand}×1 = {tactical_demand + standard_demand} chassis over 30 days).",
-        "error",
-        agent="Part-Agent",
-    )
-    all_logs.append(log)
-    await emit_logs([log])
+    try:
+        log = _sys_log(
+            db,
+            f"Combined burn rate for {shared_component}: {original_burn_rate:.1f}/day → {contention_burn_rate:.1f}/day "
+            f"(+{combined_additional_burn:.1f} from {tactical_demand}×1 + {standard_demand}×1 = {tactical_demand + standard_demand} chassis over 30 days).",
+            "error",
+            agent="Pulse",
+        )
+        all_logs.append(log)
+        await emit_logs([log])
 
-    # Run Part Agent on the contended component
-    contention_result = monitor_part(db, shared_component)
-    all_logs.extend(contention_result["logs"])
-    await emit_logs(contention_result["logs"])
+        # Run Pulse on the contended component
+        contention_result = monitor_part(db, shared_component)
+        all_logs.extend(contention_result["logs"])
+        await emit_logs(contention_result["logs"])
 
-    log = _sys_log(
-        db,
-        f"CONTENTION DETECTED: {shared_component} runway under combined demand: "
-        f"{contention_result['runway_days']}d. "
-        f"Handshake {'TRIGGERED' if contention_result['handshake_triggered'] else 'not triggered'}.",
-        "error" if contention_result["handshake_triggered"] else "warning",
-        agent="Part-Agent",
-    )
-    all_logs.append(log)
-    await emit_logs([log])
-
-    # Restore original burn rate
-    shared_inv.daily_burn_rate = original_burn_rate
-    db.flush()
+        log = _sys_log(
+            db,
+            f"CONTENTION DETECTED: {shared_component} runway under combined demand: "
+            f"{contention_result['runway_days']}d. "
+            f"Handshake {'TRIGGERED' if contention_result['handshake_triggered'] else 'not triggered'}.",
+            "error" if contention_result["handshake_triggered"] else "warning",
+            agent="Pulse",
+        )
+        all_logs.append(log)
+        await emit_logs([log])
+    finally:
+        # Restore original burn rate — even if an exception occurred
+        shared_inv.daily_burn_rate = original_burn_rate
+        db.flush()
 
     # ---------------------------------------------------------------
-    # Act 4: Core-Guard applies criticality-based prioritization
+    # Act 4: Solver applies criticality-based prioritization
     # ---------------------------------------------------------------
     log = _sys_log(
         db,
-        "Act 4: Core-Guard applying criticality-based prioritization for contending SKUs...",
+        "Act 4: Solver applying criticality-based prioritization for contending SKUs...",
         "info",
     )
     all_logs.append(log)
@@ -1223,7 +1234,7 @@ async def simulate_multi_sku_contention(
             f"criticality [{item['criticality']}], "
             f"demand {item['demand']} units → {item['chassis_needed']} chassis needed.",
             "info",
-            agent="Core-Guard",
+            agent="Solver",
         )
         all_logs.append(log)
         await emit_logs([log])
@@ -1234,7 +1245,7 @@ async def simulate_multi_sku_contention(
     all_logs.extend(mrp_result["logs"])
     await emit_logs(mrp_result["logs"])
 
-    # Ghost-Writer processes buy orders
+    # Buyer processes buy orders
     buy_orders = [a for a in mrp_result["actions"] if a["type"] == "BUY_ORDER"]
     ghost_result: dict[str, Any] = {"purchase_orders": [], "logs": []}
     if buy_orders:
@@ -1280,7 +1291,7 @@ async def simulate_contract_exhaustion(
 ) -> dict[str, Any]:
     """
     Scenario 10: Blanket PO is 90% consumed with months remaining.
-    Ghost-Writer evaluates: extend contract vs. spot buy at premium.
+    Buyer evaluates: extend contract vs. spot buy at premium.
     """
     all_logs: list[dict[str, str]] = []
 
@@ -1320,7 +1331,7 @@ async def simulate_contract_exhaustion(
         f"Forecast analysis: {forecast_demand} total units forecast across {len(parts)} part(s) "
         f"covered by {supplier.name}. Contract has {contract.remaining_qty} units remaining.",
         "info",
-        agent="Core-Guard",
+        agent="Solver",
     )
     all_logs.append(log)
     await emit_logs([log])
@@ -1334,7 +1345,7 @@ async def simulate_contract_exhaustion(
             f"RECOMMENDATION: EXTEND contract — only {coverage_ratio:.0%} of forecast demand covered. "
             f"Spot buy premium would be {spot_premium_pct}%.",
             "warning",
-            agent="Ghost-Writer",
+            agent="Buyer",
         )
     elif coverage_ratio < 0.7:
         recommendation = "RENEGOTIATE"
@@ -1343,7 +1354,7 @@ async def simulate_contract_exhaustion(
             f"RECOMMENDATION: RENEGOTIATE — {coverage_ratio:.0%} coverage. "
             f"Consider volume increase to avoid spot buys at {spot_premium_pct}% premium.",
             "info",
-            agent="Ghost-Writer",
+            agent="Buyer",
         )
     else:
         recommendation = "SPOT_BUY"
@@ -1352,7 +1363,7 @@ async def simulate_contract_exhaustion(
             f"RECOMMENDATION: SPOT_BUY for overflow — {coverage_ratio:.0%} coverage is adequate. "
             f"Spot premium {spot_premium_pct}% acceptable for gap.",
             "info",
-            agent="Ghost-Writer",
+            agent="Buyer",
         )
     all_logs.append(log)
     await emit_logs([log])
@@ -1371,7 +1382,7 @@ async def simulate_contract_exhaustion(
                     f"+{alt.cost_premium_pct}% cost, +{alt.lead_time_delta_days}d lead time. "
                     f"Notes: {alt.notes or 'N/A'}.",
                     "info",
-                    agent="Core-Guard",
+                    agent="Solver",
                 )
                 all_logs.append(log)
                 await emit_logs([log])
@@ -1388,7 +1399,7 @@ async def simulate_contract_exhaustion(
             "total_cost": round(gap_qty * spot_price, 2),
             "supplier_id": supplier.id,
             "supplier_name": supplier.name,
-            "triggered_by": "Ghost-Writer",
+            "triggered_by": "Buyer",
         }]
         ghost_result = process_buy_orders(db, buy_orders)
         all_logs.extend(ghost_result["logs"])
@@ -1434,7 +1445,7 @@ async def simulate_tariff_shock(
 ) -> dict[str, Any]:
     """
     Scenario 11: Tariff announcement on a region — costs jump overnight.
-    Core-Guard recalculates with new costs; Ghost-Writer evaluates alternates.
+    Solver recalculates with new costs; Buyer evaluates alternates.
     """
     all_logs: list[dict[str, str]] = []
 
@@ -1476,7 +1487,7 @@ async def simulate_tariff_shock(
         db,
         f"Found {len(affected_suppliers)} supplier(s) in {region}: {', '.join(affected_supplier_names)}.",
         "warning",
-        agent="Core-Guard",
+        agent="Solver",
     )
     all_logs.append(log)
     await emit_logs([log])
@@ -1497,7 +1508,7 @@ async def simulate_tariff_shock(
                 f"Tariff impact: {p.part_id} ({p.description}) — "
                 f"cost ${p.unit_cost:.2f} → ${tariffed_cost:.2f} (+{increase_pct}%).",
                 "warning",
-                agent="Core-Guard",
+                agent="Solver",
             )
             all_logs.append(log)
             await emit_logs([log])
@@ -1529,7 +1540,7 @@ async def simulate_tariff_shock(
                             f"${alt_cost:.2f} vs tariffed ${tariffed_cost:.2f}. "
                             f"Savings: ${tariffed_cost - alt_cost:.2f}/unit.",
                             "success",
-                            agent="Ghost-Writer",
+                            agent="Buyer",
                         )
                     else:
                         log = _sys_log(
@@ -1537,7 +1548,7 @@ async def simulate_tariff_shock(
                             f"Alternate {alt_supplier.name} for {p.part_id}: ${alt_cost:.2f} vs tariffed ${tariffed_cost:.2f} — "
                             f"not cheaper, but avoids tariff risk.",
                             "info",
-                            agent="Ghost-Writer",
+                            agent="Buyer",
                         )
                     all_logs.append(log)
                     await emit_logs([log])
@@ -1554,10 +1565,10 @@ async def simulate_tariff_shock(
                             "total_cost": round(order_qty * alt_cost, 2),
                             "supplier_id": alt_supplier.id,
                             "supplier_name": alt_supplier.name,
-                            "triggered_by": "Ghost-Writer",
+                            "triggered_by": "Buyer",
                         })
 
-    # Ghost-Writer processes POs
+    # Buyer processes POs
     ghost_result: dict[str, Any] = {"purchase_orders": [], "logs": []}
     if buy_orders:
         ghost_result = process_buy_orders(db, buy_orders)
@@ -1639,7 +1650,7 @@ async def simulate_moq_trap(
         f"Option A — BUY_MOQ: Order {moq} units at ${part.unit_cost:.2f}/unit = ${moq_total:.2f}. "
         f"Excess: {excess_qty} units, 6-month carry cost: ${carry_cost:.2f}.",
         "info",
-        agent="Ghost-Writer",
+        agent="Buyer",
     )
     all_logs.append(log)
     await emit_logs([log])
@@ -1649,7 +1660,7 @@ async def simulate_moq_trap(
         f"Option B — SMALL_LOT: Order {needed_qty} units at ${small_lot_unit_cost:.2f}/unit (+{small_lot_premium_pct}%) = "
         f"${small_lot_total:.2f}. No excess inventory.",
         "info",
-        agent="Ghost-Writer",
+        agent="Buyer",
     )
     all_logs.append(log)
     await emit_logs([log])
@@ -1662,7 +1673,7 @@ async def simulate_moq_trap(
             db,
             f"RECOMMENDATION: BUY_MOQ — needed qty ({needed_qty}) meets or exceeds MOQ ({moq}).",
             "success",
-            agent="Ghost-Writer",
+            agent="Buyer",
         )
     elif moq_effective_cost < small_lot_total:
         recommendation = "BUY_MOQ"
@@ -1671,7 +1682,7 @@ async def simulate_moq_trap(
             f"RECOMMENDATION: BUY_MOQ — total cost with carry (${moq_effective_cost:.2f}) is less than "
             f"small-lot (${small_lot_total:.2f}). Absorb excess.",
             "info",
-            agent="Ghost-Writer",
+            agent="Buyer",
         )
     elif excess_qty > needed_qty * 3:
         recommendation = "WAIT"
@@ -1680,7 +1691,7 @@ async def simulate_moq_trap(
             f"RECOMMENDATION: WAIT — MOQ ({moq}) is >3x needed qty ({needed_qty}). "
             f"Defer purchase and consolidate with next demand cycle.",
             "warning",
-            agent="Ghost-Writer",
+            agent="Buyer",
         )
     else:
         recommendation = "SMALL_LOT"
@@ -1689,7 +1700,7 @@ async def simulate_moq_trap(
             f"RECOMMENDATION: SMALL_LOT — small-lot premium (${small_lot_total:.2f}) is cheaper than "
             f"MOQ + carry (${moq_effective_cost:.2f}).",
             "info",
-            agent="Ghost-Writer",
+            agent="Buyer",
         )
     all_logs.append(log)
     await emit_logs([log])
@@ -1707,7 +1718,7 @@ async def simulate_moq_trap(
             "total_cost": round(order_qty * unit_cost, 2),
             "supplier_id": supplier.id,
             "supplier_name": supplier.name,
-            "triggered_by": "Ghost-Writer",
+            "triggered_by": "Buyer",
         }]
         ghost_result = process_buy_orders(db, buy_orders)
         all_logs.extend(ghost_result["logs"])
@@ -1742,7 +1753,7 @@ async def simulate_military_surge(
 ) -> dict[str, Any]:
     """
     Scenario 13: VIP military order doubles, 21-day deadline.
-    Dispatcher triages VIP priority; Core-Guard ring-fences across product lines.
+    Router triages VIP priority; Solver ring-fences across product lines.
     """
     all_logs: list[dict[str, str]] = []
 
@@ -1777,9 +1788,9 @@ async def simulate_military_surge(
     # Run MRP for the new demand
     log = _sys_log(
         db,
-        f"Core-Guard running MRP for surge demand: {new_qty}x {sku} ({part.description}).",
+        f"Solver running MRP for surge demand: {new_qty}x {sku} ({part.description}).",
         "info",
-        agent="Core-Guard",
+        agent="Solver",
     )
     all_logs.append(log)
     await emit_logs([log])
@@ -1836,12 +1847,12 @@ async def simulate_military_surge(
                     f"DISPLACED: Order {order.order_number} ({order_part.part_id}, {order.quantity} units, "
                     f"priority: {order.priority}) may be delayed — shares {', '.join(set(shared))} with military surge.",
                     "warning",
-                    agent="Core-Guard",
+                    agent="Solver",
                 )
                 all_logs.append(log)
                 await emit_logs([log])
 
-    # Ghost-Writer processes buy orders
+    # Buyer processes buy orders
     buy_orders = [a for a in mrp_result["actions"] if a["type"] == "BUY_ORDER"]
     ghost_result: dict[str, Any] = {"purchase_orders": [], "logs": []}
     if buy_orders:
@@ -1890,7 +1901,7 @@ async def simulate_semiconductor_allocation(
 ) -> dict[str, Any]:
     """
     Scenario 14: Supplier announces allocation — capacity drops significantly.
-    Part Agent recalculates runway; system evaluates product mix prioritization.
+    Pulse recalculates runway; system evaluates product mix prioritization.
     """
     all_logs: list[dict[str, str]] = []
 
@@ -1912,7 +1923,7 @@ async def simulate_semiconductor_allocation(
     all_logs.append(log)
     await emit_logs([log])
 
-    # Part Agent: Recalculate runway with reduced supply rate
+    # Pulse: Recalculate runway with reduced supply rate
     inv = part.inventory
     if inv:
         log = _sys_log(
@@ -1920,7 +1931,7 @@ async def simulate_semiconductor_allocation(
             f"Current inventory: {part_id} on_hand={inv.on_hand}, safety_stock={inv.safety_stock}, "
             f"burn_rate={inv.daily_burn_rate}/day. Allocation period: {allocation_weeks} weeks.",
             "info",
-            agent="Part-Agent",
+            agent="Pulse",
         )
         all_logs.append(log)
         await emit_logs([log])
@@ -1936,7 +1947,7 @@ async def simulate_semiconductor_allocation(
             f"supply={total_supply_during_allocation:.0f} + on_hand={inv.available}. "
             f"Gap: {projected_gap:.0f} units.",
             "error" if projected_gap > 0 else "success",
-            agent="Part-Agent",
+            agent="Pulse",
         )
         all_logs.append(log)
         await emit_logs([log])
@@ -1985,7 +1996,7 @@ async def simulate_semiconductor_allocation(
             f"criticality [{pm['criticality']}], {pm['qty_per']}x per unit. "
             f"Allocated: {monthly_allocation}/month.",
             "info",
-            agent="Core-Guard",
+            agent="Solver",
         )
         all_logs.append(log)
         await emit_logs([log])
@@ -2042,7 +2053,7 @@ async def simulate_seasonal_ramp(
 ) -> dict[str, Any]:
     """
     Scenario 15: Peak season orders arrive above forecast.
-    AURA detects deviation; Core-Guard pre-positions inventory.
+    Scout detects deviation; Solver pre-positions inventory.
     """
     all_logs: list[dict[str, str]] = []
 
@@ -2058,6 +2069,7 @@ async def simulate_seasonal_ramp(
     forecasts = db.query(DemandForecast).all()
     affected_products: list[str] = []
     pre_positioned_parts: list[dict[str, Any]] = []
+    all_purchase_orders: list[dict[str, Any]] = []
 
     # Group forecasts by part
     parts_with_forecasts: dict[int, list[DemandForecast]] = {}
@@ -2083,10 +2095,10 @@ async def simulate_seasonal_ramp(
 
         log = _sys_log(
             db,
-            f"AURA detects forecast deviation: {part.part_id} ({part.description}) — "
+            f"Scout detects forecast deviation: {part.part_id} ({part.description}) — "
             f"forecast {total_forecast}, actual demand ~{actual_demand} (+{deviation_pct}%, +{deviation_units} units).",
             "warning",
-            agent="AURA",
+            agent="Scout",
         )
         all_logs.append(log)
         await emit_logs([log])
@@ -2105,15 +2117,13 @@ async def simulate_seasonal_ramp(
                 "criticality": shortage["criticality"],
             })
 
-        # Ghost-Writer processes buy orders for this product
+        # Buyer processes buy orders for this product
         buy_orders = [a for a in mrp_result["actions"] if a["type"] == "BUY_ORDER"]
         if buy_orders:
             ghost_result = process_buy_orders(db, buy_orders)
             all_logs.extend(ghost_result["logs"])
             await emit_logs(ghost_result["logs"])
-
-    # For the response, collect POs generated during this simulation
-    ghost_result_final: dict[str, Any] = {"purchase_orders": [], "logs": []}
+            all_purchase_orders.extend(ghost_result["purchase_orders"])
 
     summary = _sys_log(
         db,
@@ -2133,7 +2143,7 @@ async def simulate_seasonal_ramp(
         "forecast_deviation_pct": deviation_pct,
         "affected_products": affected_products,
         "pre_positioned_parts": pre_positioned_parts,
-        "procurement": ghost_result_final["purchase_orders"],
+        "procurement": all_purchase_orders,
         "logs": all_logs,
     }
 
@@ -2155,9 +2165,9 @@ async def simulate_demand_horizon(
     PRD §10: Classify a demand signal into one of three horizon zones
     and determine the appropriate agent response.
 
-    Zone 1 (6+ months): Aura advisory only, no PO.
-    Zone 2 (2-5 months): Core-Guard + Ghost-Writer, standard PO.
-    Zone 3 (<60 days): Part-Agent + Core-Guard, expedited PO, secondary supplier.
+    Zone 1 (6+ months): Scout advisory only, no PO.
+    Zone 2 (2-5 months): Solver + Buyer, standard PO.
+    Zone 3 (<60 days): Pulse + Solver, expedited PO, secondary supplier.
     """
     part = db.query(Part).filter(Part.part_id == part_id).first()
     if not part:
@@ -2184,21 +2194,32 @@ async def simulate_demand_horizon(
 async def simulate_reset(
     request: Request,
     db: Session = Depends(get_db),
+    x_reset_token: Optional[str] = Header(None),
 ) -> dict[str, Any]:
     """Reset the database to a clean FL-001 state for fresh demos."""
-    from seed import seed
+    expected_token = os.getenv("RESET_TOKEN")
+    if expected_token and x_reset_token != expected_token:
+        raise HTTPException(status_code=403, detail="Invalid or missing X-Reset-Token header.")
 
-    # Close the DI-provided session FIRST so no connections hold table locks
-    db.close()
+    if not _reset_lock.acquire(blocking=False):
+        raise HTTPException(status_code=409, detail="A reset is already in progress. Please wait.")
 
-    # Dispose all pooled connections to ensure a clean slate
-    engine.dispose()
+    try:
+        from seed import seed
 
-    # Drop and recreate all tables
-    Base.metadata.drop_all(bind=engine)
-    Base.metadata.create_all(bind=engine)
+        # Close the DI-provided session FIRST so no connections hold table locks
+        db.close()
 
-    # Re-seed using a fresh session (seed() creates its own session internally)
-    seed()
+        # Dispose all pooled connections to ensure a clean slate
+        engine.dispose()
+
+        # Drop and recreate all tables
+        Base.metadata.drop_all(bind=engine)
+        Base.metadata.create_all(bind=engine)
+
+        # Re-seed using a fresh session (seed() creates its own session internally)
+        seed()
+    finally:
+        _reset_lock.release()
 
     return {"status": "reset_complete", "message": "Database wiped and re-seeded with FL-001 data."}

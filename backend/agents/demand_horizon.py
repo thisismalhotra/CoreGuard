@@ -1,20 +1,20 @@
 """
-Demand Horizon Zones — PRD §10.
+Lookout Agent — Demand Horizon Zones — PRD §10.
 
 Classifies incoming demand signals into three zones and routes them to
 the appropriate agent behaviour:
 
-  Zone 1 — Fuzzy Forecast (6–12+ months)
-    Active Agents: Aura only
+  Zone 1 — Fuzzy Forecast (6-12+ months)
+    Active Agents: Scout only
     Behaviour: Advise on blanket agreements / capacity reservations. NO POs generated.
 
-  Zone 2 — Lead Time Horizon (2–5 months)
-    Active Agents: Core-Guard + Ghost-Writer
+  Zone 2 — Lead Time Horizon (2-5 months)
+    Active Agents: Solver + Buyer
     Behaviour: Forecast consumption begins. BOM explosion. Standard POs to primary suppliers.
 
   Zone 3 — Inside Lead Time (Drop-In Crisis) (< supplier lead time)
-    Active Agents: Part Agent + Core-Guard
-    Behaviour: Part Agent defends ring-fenced inventory. Ghost-Writer pivots to
+    Active Agents: Pulse + Solver
+    Behaviour: Pulse defends ring-fenced inventory. Buyer pivots to
                fastest secondary supplier with expedited PO + cost-vs-risk trade-off.
 
 Stateless: operates on DB state passed in. Emits structured logs for Glass Box visibility.
@@ -29,7 +29,7 @@ from sqlalchemy.orm import Session
 from agents.utils import create_agent_log
 from database.models import Part, Supplier
 
-AGENT_NAME = "Demand-Horizon"
+AGENT_NAME = "Lookout"
 
 # Zone boundaries in days
 ZONE_1_MIN_DAYS = 180    # 6 months
@@ -111,7 +111,7 @@ def evaluate_demand_horizon(
     # --- Zone 1: Fuzzy Forecast (6-12+ months) ---
     if zone == 1:
         zone_name = "FUZZY_FORECAST"
-        active_agents = ["Aura"]
+        active_agents = ["Scout"]
         recommended_action = (
             f"Advisory only — demand for {demand_qty}x {part_id_str} is {days_until_needed} days out. "
             f"Monitor forecast trends. Consider blanket agreement or capacity reservation. "
@@ -125,19 +125,19 @@ def evaluate_demand_horizon(
             db,
             f"ZONE 1 (Fuzzy Forecast): {part_id_str} demand of {demand_qty} units "
             f"is {days_until_needed} days away (> {ZONE_1_MIN_DAYS}d threshold). "
-            f"Aura monitoring only — no PO action.",
+            f"Scout monitoring only — no PO action.",
             "info",
         ))
 
     # --- Zone 2: Lead Time Horizon (2-5 months) ---
     elif zone == 2:
         zone_name = "LEAD_TIME_HORIZON"
-        active_agents = ["Core-Guard", "Ghost-Writer"]
+        active_agents = ["Solver", "Buyer"]
         recommended_action = (
             f"Standard procurement — demand for {demand_qty}x {part_id_str} "
             f"falls within lead time horizon ({days_until_needed} days). "
-            f"Core-Guard to explode BOM and calculate net requirements. "
-            f"Ghost-Writer to draft standard PO to primary supplier."
+            f"Solver to explode BOM and calculate net requirements. "
+            f"Buyer to draft standard PO to primary supplier."
         )
         generate_po = True
         expedite = False
@@ -147,14 +147,14 @@ def evaluate_demand_horizon(
             db,
             f"ZONE 2 (Lead Time Horizon): {part_id_str} demand of {demand_qty} units "
             f"in {days_until_needed} days ({ZONE_2_MIN_DAYS}-{ZONE_1_MIN_DAYS}d range). "
-            f"Core-Guard + Ghost-Writer activated. Standard PO to primary supplier.",
+            f"Solver + Buyer activated. Standard PO to primary supplier.",
             "info",
         ))
 
     # --- Zone 3: Inside Lead Time / Drop-In Crisis ---
     else:
         zone_name = "DROP_IN_CRISIS"
-        active_agents = ["Part-Agent", "Core-Guard", "Ghost-Writer"]
+        active_agents = ["Pulse", "Solver", "Buyer"]
         is_inside_lead_time = days_until_needed < supplier_lead_time
 
         if is_inside_lead_time:
@@ -162,22 +162,22 @@ def evaluate_demand_horizon(
             recommended_action = (
                 f"CRISIS: Demand for {demand_qty}x {part_id_str} needed in {days_until_needed} days "
                 f"but supplier lead time is {supplier_lead_time} days. "
-                f"Part Agent defending ring-fenced inventory. "
-                f"Ghost-Writer pivoting to fastest secondary supplier with expedited PO."
+                f"Pulse defending ring-fenced inventory. "
+                f"Buyer pivoting to fastest secondary supplier with expedited PO."
             )
             use_secondary = True
             logs.append(_log(
                 db,
                 f"ZONE 3 (DROP-IN CRISIS): {part_id_str} demand of {demand_qty} units "
                 f"in {days_until_needed} days — INSIDE supplier lead time of {supplier_lead_time} days! "
-                f"Part Agent + Core-Guard activated. Switching to secondary supplier.",
+                f"Pulse + Solver activated. Switching to secondary supplier.",
                 "error",
             ))
         else:
             # Near-term but not inside lead time
             recommended_action = (
                 f"Urgent procurement — demand for {demand_qty}x {part_id_str} in {days_until_needed} days. "
-                f"Core-Guard to run expedited MRP. Ghost-Writer to draft PO to primary supplier."
+                f"Solver to run expedited MRP. Buyer to draft PO to primary supplier."
             )
             use_secondary = False
             logs.append(_log(
