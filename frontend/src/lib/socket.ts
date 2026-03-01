@@ -11,9 +11,11 @@ const globalForSocket = globalThis as unknown as {
 
 export function getSocket(): Socket {
   if (!globalForSocket.__coreGuardSocket) {
+    const token = typeof window !== "undefined" ? localStorage.getItem("cg_token") : null;
     globalForSocket.__coreGuardSocket = io(BACKEND_URL, {
       transports: ["websocket", "polling"],
       autoConnect: false,
+      auth: token ? { token } : undefined,
     });
   }
   return globalForSocket.__coreGuardSocket;
