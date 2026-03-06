@@ -77,17 +77,28 @@ def init_sio(app_state):
     _app_state = app_state
 
 
+async def _emit_logs_task(sio, logs: list[dict[str, str]], delay: float) -> None:
+    """Background coroutine: streams logs to dashboards with pacing delay."""
+    for log in logs:
+        await sio.emit("agent_log", log)
+        await asyncio.sleep(delay)
+
+
 async def emit_logs(logs: list[dict[str, str]]) -> None:
-    """Broadcast Glass Box logs to all connected dashboard clients."""
-    if _app_state is None:
+    """
+    Schedule Glass Box log emission as a fire-and-forget background task.
+
+    This returns immediately so simulation endpoints don't block the HTTP
+    response for the full duration of log streaming (which could be 60s+).
+    Logs are still emitted in order with the configured pacing delay.
+    """
+    if _app_state is None or not logs:
         return
     sio = getattr(_app_state, "sio", None)
     if sio is None:
         return
     delay = getattr(_app_state, "log_delay_seconds", 2.0)
-    for log in logs:
-        await sio.emit("agent_log", log)
-        await asyncio.sleep(delay)
+    asyncio.create_task(_emit_logs_task(sio, list(logs), delay))
 
 
 def _sys_log(db: Session, msg: str, log_type: str = "info", agent: str = "System") -> dict:
