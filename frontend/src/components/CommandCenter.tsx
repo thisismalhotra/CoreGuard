@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Activity, Terminal, Shield, Zap, Database, Bot, AlertTriangle, HelpCircle, BarChart3 } from "lucide-react";
+import { Activity, Terminal, Shield, Zap, Database, Bot, AlertTriangle, HelpCircle, BarChart3, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
 import { toast } from "sonner";
@@ -17,6 +17,7 @@ import { InventoryCharts } from "./InventoryCharts";
 import { AnalyticsCharts } from "./AnalyticsCharts";
 import { ThemeToggle } from "./ThemeToggle";
 import { OnboardingModal } from "./OnboardingModal";
+import { UserManagement } from "./UserManagement";
 import { useAuth, hasRole } from "@/lib/auth";
 
 export function CommandCenter() {
@@ -289,6 +290,12 @@ export function CommandCenter() {
                 God Mode
               </TabsTrigger>
             )}
+            {hasRole(user, "admin") && (
+              <TabsTrigger value="users" className="data-[state=active]:bg-muted gap-1.5">
+                <Users className="h-3.5 w-3.5" />
+                Users
+              </TabsTrigger>
+            )}
           </TabsList>
         </div>
 
@@ -344,6 +351,11 @@ export function CommandCenter() {
               onSwitchToLogs={() => setActiveTab("logs")}
               userRole={user?.role}
             />
+          </TabsContent>
+        )}
+        {hasRole(user, "admin") && (
+          <TabsContent value="users" className="mt-4">
+            <UserManagement />
           </TabsContent>
         )}
       </Tabs>

@@ -94,6 +94,15 @@ export type QualityInspection = {
   inspected_at: string | null;
 };
 
+export type UserProfile = {
+  id: number;
+  email: string;
+  name: string;
+  picture: string | null;
+  role: string;
+  is_active: boolean;
+};
+
 export const api = {
   getInventory: () => fetchJSON<InventoryItem[]>("/api/inventory"),
   getOrders: () => fetchJSON<PurchaseOrder[]>("/api/orders"),
@@ -189,4 +198,18 @@ export const api = {
     fetchJSON<{ delay: number }>("/api/settings/log-delay"),
   setLogDelay: (delay: number) =>
     fetchJSON<{ delay: number }>(`/api/settings/log-delay?delay=${delay}`, { method: "POST" }),
+  // Admin: user management
+  getUsers: () => fetchJSON<UserProfile[]>("/api/admin/users"),
+  updateUserRole: (userId: number, role: string) =>
+    fetchJSON<UserProfile>(`/api/admin/users/${userId}/role`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ role }),
+    }),
+  updateUserActive: (userId: number, is_active: boolean) =>
+    fetchJSON<UserProfile>(`/api/admin/users/${userId}/active`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ is_active }),
+    }),
 };
