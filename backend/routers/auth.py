@@ -4,21 +4,30 @@ Auth router: Google OAuth2 login flow + /me endpoint.
 Flow:
 1. GET /api/auth/login      -> redirect to Google consent screen
 2. GET /api/auth/callback   -> exchange code for user info, upsert user, issue JWT
-3. GET /api/auth/me         -> return current user profile (requires JWT)
+3. POST /api/auth/exchange  -> exchange short-lived auth code for JWT
+4. GET /api/auth/me         -> return current user profile (requires JWT)
 """
 
 import os
+import secrets
+import time
 from datetime import datetime, timezone
 
 from authlib.integrations.starlette_client import OAuth
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import RedirectResponse
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from auth import create_token, get_current_user
 from database.connection import get_db
 from database.models import User
 from schemas import UserResponse
+
+# Short-lived auth codes: code -> (jwt_token, expiry_timestamp)
+# Codes expire after 60 seconds and are single-use.
+_auth_codes: dict[str, tuple[str, float]] = {}
+AUTH_CODE_TTL = 60  # seconds
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
@@ -49,7 +58,11 @@ async def callback(request: Request, db: Session = Depends(get_db)):
     Exchanges auth code for user info, upserts user in DB, issues JWT,
     redirects to frontend with token in query param.
     """
-    token_data = await oauth.google.authorize_access_token(request)
+    try:
+        token_data = await oauth.google.authorize_access_token(request)
+    except Exception:
+        return RedirectResponse(f"{FRONTEND_URL}/login?error=oauth_failed")
+
     user_info = token_data.get("userinfo")
 
     if not user_info:
@@ -82,17 +95,48 @@ async def callback(request: Request, db: Session = Depends(get_db)):
     db.refresh(user)
 
     jwt_token = create_token(user_id=user.id, email=user.email, role=user.role)
-    return RedirectResponse(f"{FRONTEND_URL}?token={jwt_token}")
+
+    # Store JWT behind a short-lived, single-use auth code so the token
+    # never appears in URLs, browser history, or proxy logs.
+    code = secrets.token_urlsafe(32)
+    _auth_codes[code] = (jwt_token, time.time() + AUTH_CODE_TTL)
+
+    # Purge expired codes opportunistically
+    now = time.time()
+    expired = [k for k, (_, exp) in _auth_codes.items() if exp < now]
+    for k in expired:
+        _auth_codes.pop(k, None)
+
+    return RedirectResponse(f"{FRONTEND_URL}?code={code}")
+
+
+class ExchangeCodeRequest(BaseModel):
+    code: str
+
+
+@router.post("/exchange")
+async def exchange_code(body: ExchangeCodeRequest):
+    """Exchange a short-lived auth code for a JWT. Single-use."""
+    entry = _auth_codes.pop(body.code, None)
+    if entry is None:
+        raise HTTPException(status_code=400, detail="Invalid or expired code")
+    jwt_token, expiry = entry
+    if time.time() > expiry:
+        raise HTTPException(status_code=400, detail="Invalid or expired code")
+    return {"token": jwt_token}
 
 
 @router.post("/dev-login")
 async def dev_login(db: Session = Depends(get_db)):
     """
     Dev-only login: creates a local admin user and returns a JWT.
-    Only available when GOOGLE_CLIENT_ID is not configured.
+    Requires explicit DEV_LOGIN=true env var. Refuses to run when
+    GOOGLE_CLIENT_ID is configured (i.e. production).
     """
-    if os.getenv("GOOGLE_CLIENT_ID", ""):
-        from fastapi import HTTPException
+    dev_login_enabled = os.getenv("DEV_LOGIN", "").lower() == "true"
+    google_configured = bool(os.getenv("GOOGLE_CLIENT_ID", ""))
+
+    if not dev_login_enabled or google_configured:
         raise HTTPException(status_code=404, detail="Not found")
 
     email = "dev@coreguard.local"

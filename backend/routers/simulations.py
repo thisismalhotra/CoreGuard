@@ -676,6 +676,20 @@ async def simulate_full_blackout(
     all_logs.append(log)
     await emit_logs([log])
 
+    # Re-enable all suppliers so the simulation doesn't permanently corrupt DB state
+    for s in all_suppliers:
+        s.is_active = True
+    db.flush()
+
+    log = _sys_log(
+        db,
+        f"Full blackout simulation complete: all {len(all_suppliers)} suppliers re-enabled. "
+        f"System restored to operational state.",
+        "success",
+    )
+    all_logs.append(log)
+    await emit_logs([log])
+
     db.commit()
 
     return {
@@ -776,15 +790,28 @@ async def simulate_slow_bleed(
 
         # If handshake triggered: find parent finished good via BOM, run MRP + procurement
         if handshake_triggered:
-            # Find the parent finished good that uses this part
-            bom_entry = db.query(BOMEntry).filter(BOMEntry.component_id == part.id).first()
-            if bom_entry:
-                parent_part = bom_entry.parent
+            # Trace BOM upward to find the first finished good ancestor
+            from database.models import PartCategory
+            current_part = part
+            parent_part = None
+            trace_path: list[str] = [part_id]
+
+            while True:
+                bom_entry = db.query(BOMEntry).filter(BOMEntry.component_id == current_part.id).first()
+                if not bom_entry:
+                    break
+                current_part = bom_entry.parent
+                trace_path.append(current_part.part_id)
+                if current_part.category == PartCategory.FINISHED_GOOD:
+                    parent_part = current_part
+                    break
+
+            if parent_part:
                 parent_sku = parent_part.part_id
 
                 log = _sys_log(
                     db,
-                    f"Tracing {part_id} upstream via BOM → parent finished good: {parent_sku} ({parent_part.description}).",
+                    f"Tracing {part_id} upstream via BOM → {' → '.join(trace_path)} (finished good).",
                     "info",
                     agent="Solver",
                 )
@@ -813,7 +840,7 @@ async def simulate_slow_bleed(
             else:
                 log = _sys_log(
                     db,
-                    f"No parent finished good found for {part_id} in BOM. Cannot escalate upstream.",
+                    f"No finished good ancestor found for {part_id} in BOM. Cannot escalate upstream.",
                     "warning",
                     agent="Solver",
                 )
@@ -1335,8 +1362,31 @@ async def simulate_contract_exhaustion(
     parts = db.query(Part).filter(Part.supplier_id == supplier.id).all()
     forecast_demand = 0
     for p in parts:
+        # First try direct forecasts (for finished goods)
         forecasts = db.query(DemandForecast).filter(DemandForecast.part_id == p.id).all()
-        forecast_demand += sum(f.forecast_qty for f in forecasts)
+        direct_demand = sum(f.forecast_qty for f in forecasts)
+        if direct_demand > 0:
+            forecast_demand += direct_demand
+        else:
+            # Derive demand by walking BOM upward: component → sub-assembly → finished good
+            bom_parents = db.query(BOMEntry).filter(BOMEntry.component_id == p.id).all()
+            for bom in bom_parents:
+                parent = bom.parent
+                # Check if parent has forecasts (finished good)
+                parent_forecasts = db.query(DemandForecast).filter(DemandForecast.part_id == parent.id).all()
+                if parent_forecasts:
+                    forecast_demand += sum(f.forecast_qty * bom.quantity_per for f in parent_forecasts)
+                else:
+                    # Parent is a sub-assembly — walk up one more level
+                    grandparent_boms = db.query(BOMEntry).filter(BOMEntry.component_id == parent.id).all()
+                    for gp_bom in grandparent_boms:
+                        gp_forecasts = db.query(DemandForecast).filter(
+                            DemandForecast.part_id == gp_bom.parent_id
+                        ).all()
+                        forecast_demand += sum(
+                            f.forecast_qty * bom.quantity_per * gp_bom.quantity_per
+                            for f in gp_forecasts
+                        )
 
     log = _sys_log(
         db,
@@ -1815,12 +1865,26 @@ async def simulate_military_surge(
     await emit_logs(mrp_result["logs"])
 
     # Ring-fence inventory for the military order
+    # Walk BOM recursively to leaf components (which have inventory records)
     ring_fenced_parts: list[dict[str, Any]] = []
-    bom_entries = db.query(BOMEntry).filter(BOMEntry.parent_id == part.id).all()
 
-    for bom in bom_entries:
-        component = bom.component
-        ring_qty = min(new_qty * bom.quantity_per, component.inventory.available if component.inventory else 0)
+    def _get_leaf_components(parent_id: int, qty_multiplier: int) -> list[tuple[Part, int]]:
+        """Recursively walk BOM to find leaf components with inventory."""
+        leaves: list[tuple[Part, int]] = []
+        bom_entries = db.query(BOMEntry).filter(BOMEntry.parent_id == parent_id).all()
+        for bom in bom_entries:
+            component = bom.component
+            effective_qty = qty_multiplier * bom.quantity_per
+            if component.inventory and component.inventory.on_hand > 0:
+                leaves.append((component, effective_qty))
+            else:
+                # Sub-assembly without inventory — recurse deeper
+                leaves.extend(_get_leaf_components(component.id, effective_qty))
+        return leaves
+
+    leaf_components = _get_leaf_components(part.id, new_qty)
+    for component, needed in leaf_components:
+        ring_qty = min(needed, component.inventory.available)
         if ring_qty > 0:
             rf_result = ring_fence_inventory(db, component.part_id, mil_order.order_number, ring_qty)
             all_logs.extend(rf_result["logs"])

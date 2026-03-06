@@ -777,6 +777,8 @@ def seed() -> None:
             reserved=inv.get("reserved", 0),
             ring_fenced_qty=0,
             daily_burn_rate=inv["daily_burn_rate"],
+            # Set recent consumption date so Auditor baseline scan is clean (PRD §11)
+            last_consumption_date=datetime.now(timezone.utc) if inv["daily_burn_rate"] > 0 else None,
         )
         db.add(record)
 
@@ -978,7 +980,7 @@ def seed() -> None:
         {"part_id": "PCB-202", "primary": "ShenZhen FastPCB", "alternate": "PCBWay",
          "cost_premium_pct": 5.0, "lead_time_delta_days": 0, "notes": "Same region risk"},
         {"part_id": "PCB-202", "primary": "ShenZhen FastPCB", "alternate": "Advanced Circuits",
-         "cost_premium_pct": 45.0, "lead_time_delta_days": -8, "notes": "Eliminates tariff risk"},
+         "cost_premium_pct": 20.0, "lead_time_delta_days": -8, "notes": "Eliminates tariff risk"},
         {"part_id": "CH-231", "primary": "Apex CNC Works", "alternate": "Proto Labs",
          "cost_premium_pct": 60.0, "lead_time_delta_days": -7, "notes": "Rapid prototyping rates"},
         {"part_id": "GKT-223", "primary": "Parker Hannifin", "alternate": "Marco Rubber",
@@ -986,7 +988,7 @@ def seed() -> None:
         {"part_id": "MCU-241", "primary": "Wurth Elektronik", "alternate": "Digi-Key",
          "cost_premium_pct": 35.0, "lead_time_delta_days": -14, "notes": "No allocation guarantee"},
         {"part_id": "SW-232", "primary": "Dongguan SwitchTech", "alternate": "C&K Switches",
-         "cost_premium_pct": 40.0, "lead_time_delta_days": -5, "notes": "Higher quality"},
+         "cost_premium_pct": 18.0, "lead_time_delta_days": -5, "notes": "Higher quality"},
     ]
 
     for a in alternate_data:
