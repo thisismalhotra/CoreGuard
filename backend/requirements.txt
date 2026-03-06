@@ -30,6 +30,7 @@ slowapi==0.1.9
 
 # Authentication
 authlib==1.4.1
+itsdangerous==2.2.0
 python-jose[cryptography]==3.4.0
 
 # Testing
