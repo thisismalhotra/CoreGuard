@@ -9,10 +9,20 @@ Run: uvicorn main:socket_app --reload --host 0.0.0.0 --port 8000
 
 import logging
 import os
+import sys
 from contextlib import asynccontextmanager
 from typing import Optional
 
 import socketio
+
+# --- Structured logging setup ---
+LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
+logging.basicConfig(
+    level=getattr(logging, LOG_LEVEL, logging.INFO),
+    format="%(asctime)s %(levelname)-8s [%(name)s] %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+    stream=sys.stdout,
+)
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from slowapi import _rate_limit_exceeded_handler
