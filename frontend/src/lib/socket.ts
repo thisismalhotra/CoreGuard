@@ -11,11 +11,15 @@ const globalForSocket = globalThis as unknown as {
 
 export function getSocket(): Socket {
   if (!globalForSocket.__coreGuardSocket) {
-    const token = typeof window !== "undefined" ? localStorage.getItem("cg_token") : null;
     globalForSocket.__coreGuardSocket = io(BACKEND_URL, {
       transports: ["websocket", "polling"],
       autoConnect: false,
-      auth: token ? { token } : undefined,
+      // Dynamic auth: reads the latest token on every connect/reconnect
+      // so re-authentication is picked up without a page refresh.
+      auth: (cb) => {
+        const token = typeof window !== "undefined" ? localStorage.getItem("cg_token") : null;
+        cb(token ? { token } : {});
+      },
     });
   }
   return globalForSocket.__coreGuardSocket;
