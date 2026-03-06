@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { RefreshCw, Database, ArrowLeft, Download, Copy, Check } from "lucide-react";
+import { RefreshCw, Database, ArrowLeft, Download, Copy, Check, FileDown } from "lucide-react";
 import Link from "next/link";
 import { ThemeToggle } from "./ThemeToggle";
 import { api } from "@/lib/api";
@@ -112,7 +112,7 @@ const exportCSV = (rows: Record<string, unknown>[], tableName: string) => {
   URL.revokeObjectURL(url);
 };
 
-function DataTable({ rows }: { rows: Record<string, unknown>[] }) {
+function DataTable({ rows, tableKey }: { rows: Record<string, unknown>[]; tableKey?: string }) {
   const [requestedPage, setCurrentPage] = useState(1);
   const [copiedCell, setCopiedCell] = useState<string | null>(null);
   const rowsPerPage = 25;
@@ -154,6 +154,11 @@ function DataTable({ rows }: { rows: Record<string, unknown>[] }) {
                 {col}
               </th>
             ))}
+            {tableKey === "orders" && (
+              <th className="text-left px-3 py-2 text-muted-foreground font-medium text-xs uppercase tracking-wider whitespace-nowrap">
+                PDF
+              </th>
+            )}
           </tr>
         </thead>
         <tbody>
@@ -265,6 +270,22 @@ function DataTable({ rows }: { rows: Record<string, unknown>[] }) {
                   </td>
                 );
               })}
+              {tableKey === "orders" && (
+                <td className="px-3 py-2 whitespace-nowrap">
+                  <button
+                    onClick={() => {
+                      const poNumber = row["po_number"];
+                      if (typeof poNumber === "string") {
+                        api.downloadPOPdf(poNumber);
+                      }
+                    }}
+                    className="p-1 rounded hover:bg-muted transition-colors"
+                    title="Download PDF"
+                  >
+                    <FileDown className="h-4 w-4 text-muted-foreground hover:text-foreground" />
+                  </button>
+                </td>
+              )}
             </tr>
           ))}
         </tbody>
@@ -410,7 +431,7 @@ export function DBViewer() {
                   Loading {t.label}...
                 </div>
               ) : (
-                <DataTable rows={(data[t.key] || []) as Record<string, unknown>[]} />
+                <DataTable rows={(data[t.key] || []) as Record<string, unknown>[]} tableKey={t.key} />
               )}
             </div>
           </TabsContent>

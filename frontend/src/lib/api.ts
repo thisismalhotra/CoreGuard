@@ -103,6 +103,28 @@ export type UserProfile = {
   is_active: boolean;
 };
 
+async function downloadBlob(path: string, filename: string): Promise<void> {
+  const token = typeof window !== "undefined" ? localStorage.getItem("cg_token") : null;
+  const headers: Record<string, string> = {};
+  if (token) {
+    headers["Authorization"] = `Bearer ${token}`;
+  }
+  const res = await fetch(`${API_BASE}${path}`, { headers });
+  if (res.status === 401 && typeof window !== "undefined") {
+    localStorage.removeItem("cg_token");
+    window.location.href = "/login";
+    throw new Error("Unauthorized");
+  }
+  if (!res.ok) throw new Error(`API error: ${res.status}`);
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
 export const api = {
   getInventory: () => fetchJSON<InventoryItem[]>("/api/inventory"),
   getOrders: () => fetchJSON<PurchaseOrder[]>("/api/orders"),
@@ -180,6 +202,8 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ status }),
     }),
+  downloadPOPdf: (poNumber: string) =>
+    downloadBlob(`/api/orders/${poNumber}/pdf`, `${poNumber}.pdf`),
   resetSimulation: () =>
     fetchJSON<Record<string, unknown>>("/api/simulate/reset", { method: "POST" }),
   getAgents: () => fetchJSON<Agent[]>("/api/agents"),

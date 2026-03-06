@@ -146,7 +146,7 @@ def get_agents(request: Request, current_user: User = Depends(get_current_user))
                 "Hard-coded spend limit: FINANCIAL_CONSTITUTION_MAX_SPEND = $5,000.00",
                 "total_cost > $5,000 \u2192 OrderStatus.PENDING_APPROVAL (no exceptions)",
                 "total_cost \u2264 $5,000 \u2192 OrderStatus.APPROVED (auto-approved)",
-                "Generates PDF PO via fpdf2 to backend/generated_pos/",
+                "Generates PDF PO via fpdf2 (on-demand, in-memory)",
                 "Each PO gets a unique PO number (PO-XXXXXXXX)",
                 "The LLM cannot override the financial constitution",
             ],

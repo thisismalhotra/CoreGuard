@@ -4,11 +4,14 @@ Purchase Order REST endpoints.
 
 import uuid
 from datetime import datetime, timezone
+from io import BytesIO
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session, joinedload
 from starlette.concurrency import run_in_threadpool
+from starlette.responses import StreamingResponse
 
+from agents.ghost_writer import generate_po_pdf_bytes
 from auth import get_current_user, require_role
 from database.connection import get_db
 from database.models import AgentLog, OrderStatus, Part, PurchaseOrder, Supplier, User
@@ -103,6 +106,42 @@ def create_order(
         "created_at": po.created_at.isoformat(),
         "triggered_by": "Manual",
     }
+
+
+@router.get("/orders/{po_number}/pdf")
+@limiter.limit("30/minute")
+def download_order_pdf(
+    po_number: str,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Generate and stream a PDF for a specific purchase order."""
+    po = (
+        db.query(PurchaseOrder)
+        .options(joinedload(PurchaseOrder.part), joinedload(PurchaseOrder.supplier))
+        .filter(PurchaseOrder.po_number == po_number)
+        .first()
+    )
+    if not po:
+        raise HTTPException(status_code=404, detail=f"Purchase order '{po_number}' not found")
+
+    po_dict = {
+        "po_number": po.po_number,
+        "part_id": po.part.part_id,
+        "supplier": po.supplier.name,
+        "quantity": po.quantity,
+        "unit_cost": po.unit_cost,
+        "total_cost": po.total_cost,
+        "status": po.status.value,
+    }
+    pdf_bytes = generate_po_pdf_bytes(po_dict)
+
+    return StreamingResponse(
+        BytesIO(pdf_bytes),
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{po_number}.pdf"'},
+    )
 
 
 @router.patch("/orders/{po_number}", response_model=PurchaseOrderResponse)

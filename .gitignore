@@ -13,9 +13,6 @@ __pycache__/
 *.db-wal
 *.db-journal
 
-# Generated files
-backend/generated_pos/
-
 # OS
 .DS_Store
 
