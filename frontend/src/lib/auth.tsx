@@ -35,30 +35,29 @@ export function hasRole(user: User | null, ...roles: string[]): boolean {
 
 const API_BASE = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
 
-// Extract initial token synchronously so it's available before any child effects run.
-// This prevents the race condition where CommandCenter's useEffect fires API calls
-// before the token is saved to localStorage.
-function getInitialToken(): string | null {
+// Check if there's a pending auth code in the URL that needs exchanging.
+// Returns the code if present (and cleans the URL), null otherwise.
+function extractAuthCode(): string | null {
   if (typeof window === "undefined") return null;
-
   const params = new URLSearchParams(window.location.search);
-  const urlToken = params.get("token");
-
-  if (urlToken) {
-    localStorage.setItem("cg_token", urlToken);
-    // Clean the URL so token isn't visible / bookmarkable
+  const code = params.get("code");
+  if (code) {
+    // Clean the URL immediately so code isn't visible / bookmarkable
     window.history.replaceState({}, "", window.location.pathname);
-    return urlToken;
+    return code;
   }
+  return null;
+}
 
+function getStoredToken(): string | null {
+  if (typeof window === "undefined") return null;
   return localStorage.getItem("cg_token");
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
-  const [token, setToken] = useState<string | null>(getInitialToken);
-  // If there's no token at init, we already know there's no user — skip loading state
-  const [loading, setLoading] = useState(() => getInitialToken() !== null);
+  const [token, setToken] = useState<string | null>(getStoredToken);
+  const [loading, setLoading] = useState(true);
 
   const logout = useCallback(() => {
     localStorage.removeItem("cg_token");
@@ -67,28 +66,57 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     window.location.href = "/login";
   }, []);
 
-  // When token changes, fetch user profile
+  // On mount: exchange auth code if present, then fetch user profile
   useEffect(() => {
-    if (!token) return;
+    const code = extractAuthCode();
 
-    fetch(`${API_BASE}/api/auth/me`, {
-      headers: { Authorization: `Bearer ${token}` },
-    })
-      .then((res) => {
-        if (!res.ok) throw new Error("Unauthorized");
-        return res.json();
-      })
-      .then((data) => {
-        setUser(data);
+    async function init() {
+      let activeToken = token;
+
+      // If we have an auth code from OAuth callback, exchange it for a JWT
+      if (code) {
+        try {
+          const res = await fetch(`${API_BASE}/api/auth/exchange`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ code }),
+          });
+          if (!res.ok) throw new Error("Code exchange failed");
+          const data = await res.json();
+          activeToken = data.token;
+          localStorage.setItem("cg_token", activeToken!);
+          setToken(activeToken);
+        } catch {
+          setLoading(false);
+          return;
+        }
+      }
+
+      if (!activeToken) {
         setLoading(false);
-      })
-      .catch(() => {
+        return;
+      }
+
+      // Fetch user profile with the token
+      try {
+        const res = await fetch(`${API_BASE}/api/auth/me`, {
+          headers: { Authorization: `Bearer ${activeToken}` },
+        });
+        if (!res.ok) throw new Error("Unauthorized");
+        const data = await res.json();
+        setUser(data);
+      } catch {
         localStorage.removeItem("cg_token");
         setToken(null);
         setUser(null);
+      } finally {
         setLoading(false);
-      });
-  }, [token]);
+      }
+    }
+
+    init();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
     <AuthContext.Provider value={{ user, token, loading, logout }}>
