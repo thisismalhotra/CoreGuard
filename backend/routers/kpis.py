@@ -2,6 +2,8 @@
 KPI & Settings REST endpoints.
 """
 
+from datetime import datetime, timedelta, timezone
+
 from fastapi import APIRouter, Depends, Request
 from sqlalchemy.orm import Session
 
@@ -31,8 +33,14 @@ def get_kpis(request: Request, db: Session = Depends(get_db), current_user: User
     auto_approved = sum(1 for o in orders if o.status.value == "APPROVED")
     total_orders = len(orders)
 
-    # Count distinct agents that have logged activity
-    active_agents = db.query(AgentLog.agent).distinct().count()
+    # Count distinct agents active in the last 5 minutes (not all-time)
+    recent_cutoff = datetime.now(timezone.utc) - timedelta(minutes=5)
+    active_agents = (
+        db.query(AgentLog.agent)
+        .filter(AgentLog.timestamp >= recent_cutoff)
+        .distinct()
+        .count()
+    )
 
     return {
         "inventory_health": round(total_on_hand / total_safety, 2) if total_safety > 0 else 0,
