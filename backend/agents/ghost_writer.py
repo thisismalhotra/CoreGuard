@@ -160,6 +160,7 @@ def generate_po_pdf_bytes(po: dict[str, Any]) -> bytes:
     from fpdf import FPDF
 
     pdf = FPDF()
+    pdf.compress = False  # Keep text readable in raw bytes for content validation
     pdf.add_page()
     pdf.set_font("Helvetica", "B", 20)
     pdf.cell(0, 15, "PURCHASE ORDER", ln=True, align="C")

@@ -334,6 +334,25 @@ def test_generate_po_pdf_bytes_returns_pdf(db):
     assert result[:5] == b"%PDF-"
 
 
+def test_generate_po_pdf_bytes_content(db):
+    """PDF bytes contain the PO number and supplier name."""
+    from agents.ghost_writer import generate_po_pdf_bytes
+
+    po_dict = {
+        "po_number": "PO-CONTENT01",
+        "part_id": "LED-201",
+        "supplier": "CREE Inc.",
+        "quantity": 500,
+        "unit_cost": 11.50,
+        "total_cost": 5750.00,
+        "status": "PENDING_APPROVAL",
+    }
+    pdf_bytes = generate_po_pdf_bytes(po_dict)
+    # PDF text content should contain the PO number
+    assert b"PO-CONTENT01" in pdf_bytes
+    assert b"CREE" in pdf_bytes
+
+
 # ---------------------------------------------------------------------------
 # Solver — Blast Radius Analysis (PRD §3)
 # ---------------------------------------------------------------------------
