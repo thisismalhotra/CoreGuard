@@ -273,12 +273,29 @@ async def simulate_supply_shock(
         # Order the actual shortfall (safety stock deficit), not just safety_stock blindly
         order_qty = max(inv.safety_stock - inv.available, inv.safety_stock)
 
-        alternate = (
-            db.query(Supplier)
-            .filter(Supplier.id != supplier.id, Supplier.is_active.is_(True))
-            .order_by(Supplier.reliability_score.desc())
+        # Use the alternate_suppliers table for proper part-to-supplier mappings
+        alt_mapping = (
+            db.query(AlternateSupplier)
+            .filter(
+                AlternateSupplier.part_id == part.id,
+                AlternateSupplier.primary_supplier_id == supplier.id,
+            )
             .first()
         )
+
+        if alt_mapping:
+            alternate = db.query(Supplier).filter(Supplier.id == alt_mapping.alternate_supplier_id, Supplier.is_active.is_(True)).first()
+        else:
+            alternate = None
+
+        # Fallback: if no mapping exists, find any active supplier for the part
+        if not alternate:
+            alternate = (
+                db.query(Supplier)
+                .filter(Supplier.id != supplier.id, Supplier.is_active.is_(True))
+                .order_by(Supplier.reliability_score.desc())
+                .first()
+            )
 
         if not alternate:
             log = _sys_log(db, f"CRITICAL: No alternate suppliers available for {part.part_id}!", "error", agent="Solver")
@@ -286,10 +303,14 @@ async def simulate_supply_shock(
             await emit_logs([log])
             continue
 
+        cost_premium_note = ""
+        if alt_mapping:
+            cost_premium_note = f", cost premium: +{alt_mapping.cost_premium_pct}%"
+
         log = _sys_log(
             db,
             f"Switching {part.part_id} to alternate supplier: {alternate.name} "
-            f"(reliability: {alternate.reliability_score}, lead time: {alternate.lead_time_days}d).",
+            f"(reliability: {alternate.reliability_score}, lead time: {alternate.lead_time_days}d{cost_premium_note}).",
             "info",
             agent="Solver",
         )
