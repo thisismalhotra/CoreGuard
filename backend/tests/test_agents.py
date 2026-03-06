@@ -27,6 +27,7 @@ from agents.demand_horizon import (
 )
 from agents.ghost_writer import (
     FINANCIAL_CONSTITUTION_MAX_SPEND,
+    generate_po_pdf_bytes,
     process_buy_orders,
 )
 from agents.part_agent import (
@@ -310,6 +311,27 @@ class TestBuyerConstitution:
         assert len(result["logs"]) >= 3  # Received, Processing, Created
         for log in result["logs"]:
             assert log["agent"] == "Buyer"
+
+
+# ---------------------------------------------------------------------------
+# Buyer — PDF Generation
+# ---------------------------------------------------------------------------
+
+def test_generate_po_pdf_bytes_returns_pdf(db):
+    """generate_po_pdf_bytes returns valid PDF bytes for a PO dict."""
+    po_dict = {
+        "po_number": "PO-TEST0001",
+        "part_id": "CH-101",
+        "supplier": "AluForge",
+        "quantity": 100,
+        "unit_cost": 12.50,
+        "total_cost": 1250.00,
+        "status": "APPROVED",
+    }
+    result = generate_po_pdf_bytes(po_dict)
+    assert isinstance(result, bytes)
+    assert len(result) > 0
+    assert result[:5] == b"%PDF-"
 
 
 # ---------------------------------------------------------------------------
