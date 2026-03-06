@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Activity, Terminal, Shield, Zap, Database, Bot, AlertTriangle, HelpCircle, BarChart3 } from "lucide-react";
+import { Activity, Terminal, Shield, Zap, Database, Bot, AlertTriangle, HelpCircle, BarChart3, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
 import { toast } from "sonner";
@@ -17,6 +17,7 @@ import { InventoryCharts } from "./InventoryCharts";
 import { AnalyticsCharts } from "./AnalyticsCharts";
 import { ThemeToggle } from "./ThemeToggle";
 import { OnboardingModal } from "./OnboardingModal";
+import { UserManagement } from "./UserManagement";
 import { useAuth, hasRole } from "@/lib/auth";
 
 export function CommandCenter() {
@@ -70,8 +71,18 @@ export function CommandCenter() {
     }
   }, []);
 
+  // Redirect to login if auth resolves to no user
   useEffect(() => {
-    // Initial data fetch on mount — calls setInventory/setKPIs/setLogs
+    if (!loading && !user) {
+      window.location.href = "/login";
+    }
+  }, [loading, user]);
+
+  // Only fetch data and connect socket after auth is resolved
+  useEffect(() => {
+    if (loading || !user) return;
+
+    // Initial data fetch — calls setInventory/setKPIs/setLogs
     // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional init fetch
     refreshData();
 
@@ -118,7 +129,16 @@ export function CommandCenter() {
       socket.io.off("reconnect_failed");
       socket.disconnect();
     };
-  }, [refreshData]);
+  }, [refreshData, loading, user]);
+
+  // Show loading while auth is resolving to prevent flicker
+  if (loading || !user) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background">
+        <p className="text-sm text-muted-foreground">Loading...</p>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-background text-foreground p-6">
@@ -130,7 +150,7 @@ export function CommandCenter() {
             Core-Guard <span className="text-blue-400">Command Center</span>
           </h1>
           <p className="text-sm text-muted-foreground">
-            Autonomous Supply Chain Operating System — FL-001
+            Autonomous Supply Chain Operating System
           </p>
         </div>
         <div className="flex items-center gap-4">
@@ -270,6 +290,12 @@ export function CommandCenter() {
                 God Mode
               </TabsTrigger>
             )}
+            {hasRole(user, "admin") && (
+              <TabsTrigger value="users" className="data-[state=active]:bg-muted gap-1.5">
+                <Users className="h-3.5 w-3.5" />
+                Users
+              </TabsTrigger>
+            )}
           </TabsList>
         </div>
 
@@ -325,6 +351,11 @@ export function CommandCenter() {
               onSwitchToLogs={() => setActiveTab("logs")}
               userRole={user?.role}
             />
+          </TabsContent>
+        )}
+        {hasRole(user, "admin") && (
+          <TabsContent value="users" className="mt-4">
+            <UserManagement />
           </TabsContent>
         )}
       </Tabs>
