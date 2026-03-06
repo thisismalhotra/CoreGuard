@@ -68,6 +68,12 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# --- Health check (for Render / load balancer probes) ---
+@app.get("/health", tags=["system"])
+async def health():
+    return {"status": "ok"}
+
+
 # --- Register routers ---
 app.include_router(admin_router.router)
 app.include_router(auth_router.router)
