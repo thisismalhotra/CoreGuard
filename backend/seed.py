@@ -51,7 +51,7 @@ def seed() -> None:
 
     # Guard against double-seeding
     if db.query(Supplier).first():
-        logger.info("Database already seeded. Delete coreguard.db to re-seed.")
+        logger.info("Database already seeded. Drop tables or delete coreguard.db to re-seed.")
         db.close()
         return
 

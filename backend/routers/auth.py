@@ -85,6 +85,33 @@ async def callback(request: Request, db: Session = Depends(get_db)):
     return RedirectResponse(f"{FRONTEND_URL}?token={jwt_token}")
 
 
+@router.post("/dev-login")
+async def dev_login(db: Session = Depends(get_db)):
+    """
+    Dev-only login: creates a local admin user and returns a JWT.
+    Only available when GOOGLE_CLIENT_ID is not configured.
+    """
+    if os.getenv("GOOGLE_CLIENT_ID", ""):
+        from fastapi import HTTPException
+        raise HTTPException(status_code=404, detail="Not found")
+
+    email = "dev@coreguard.local"
+    user = db.query(User).filter(User.email == email).first()
+    if not user:
+        user = User(
+            google_id="dev-local",
+            email=email,
+            name="Dev Admin",
+            role="admin",
+        )
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+
+    jwt_token = create_token(user_id=user.id, email=user.email, role=user.role)
+    return {"token": jwt_token, "user": {"id": user.id, "email": user.email, "name": user.name, "role": user.role}}
+
+
 @router.get("/me", response_model=UserResponse)
 async def me(current_user: User = Depends(get_current_user)) -> dict:
     """Return the current authenticated user's profile."""
