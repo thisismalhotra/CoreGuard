@@ -49,11 +49,23 @@ def seed() -> None:
     init_db()
     db = SessionLocal()
 
-    # Guard against double-seeding
-    if db.query(Supplier).first():
-        logger.info("Database already seeded. Drop tables or delete coreguard.db to re-seed.")
+    try:
+        # Guard against double-seeding — safe to run on every deploy
+        if db.query(Supplier).first():
+            print("Database already seeded — skipping. (Drop tables or delete coreguard.db to re-seed.)")
+            return
+
+        _do_seed(db)
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+    finally:
         db.close()
-        return
+
+
+def _do_seed(db) -> None:
+    """Insert all seed data. Caller owns commit/rollback."""
 
     # ---------------------------------------------------------------
     # 1. SUPPLIERS (22 vendors — enriched with tier, region, MOQ, capacity)
@@ -1001,9 +1013,6 @@ def seed() -> None:
             notes=a["notes"],
         )
         db.add(alt)
-
-    db.commit()
-    db.close()
 
     print("=" * 60)
     print("Core-Guard Tactical Lighting Division — Seed Complete")
