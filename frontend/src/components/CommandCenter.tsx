@@ -70,8 +70,18 @@ export function CommandCenter() {
     }
   }, []);
 
+  // Redirect to login if auth resolves to no user
   useEffect(() => {
-    // Initial data fetch on mount — calls setInventory/setKPIs/setLogs
+    if (!loading && !user) {
+      window.location.href = "/login";
+    }
+  }, [loading, user]);
+
+  // Only fetch data and connect socket after auth is resolved
+  useEffect(() => {
+    if (loading || !user) return;
+
+    // Initial data fetch — calls setInventory/setKPIs/setLogs
     // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional init fetch
     refreshData();
 
@@ -118,7 +128,16 @@ export function CommandCenter() {
       socket.io.off("reconnect_failed");
       socket.disconnect();
     };
-  }, [refreshData]);
+  }, [refreshData, loading, user]);
+
+  // Show loading while auth is resolving to prevent flicker
+  if (loading || !user) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background">
+        <p className="text-sm text-muted-foreground">Loading...</p>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-background text-foreground p-6">
