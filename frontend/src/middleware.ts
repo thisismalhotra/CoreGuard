@@ -15,18 +15,23 @@ export function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
-  // Check for token in URL param (OAuth redirect lands on / with ?token=)
-  const urlToken = request.nextUrl.searchParams.get("token");
-  if (urlToken) {
+  // Allow OAuth callback with auth code (code exchange happens client-side)
+  const authCode = request.nextUrl.searchParams.get("code");
+  if (authCode) {
     return NextResponse.next();
   }
 
-  // Note: We use localStorage for JWT storage, so middleware cannot validate
-  // tokens server-side. The real auth protection comes from:
-  // 1. AuthProvider — redirects to /login client-side if no token or token is invalid
-  // 2. Backend — returns 401 on every API call without valid JWT
-  // 3. api.ts — redirects to /login on 401 response
-  // If cookie-based auth is added later, server-side validation can happen here.
+  // Check for auth indicator cookie set by AuthProvider after successful login.
+  // This is NOT a security gate (JWT validation happens backend-side on every API call).
+  // It prevents SSR pages from flashing unauthenticated content before the
+  // client-side AuthProvider redirects.
+  const hasAuth = request.cookies.get("cg_auth");
+  if (!hasAuth) {
+    const loginUrl = request.nextUrl.clone();
+    loginUrl.pathname = "/login";
+    return NextResponse.redirect(loginUrl);
+  }
+
   return NextResponse.next();
 }
 
