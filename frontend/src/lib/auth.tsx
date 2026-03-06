@@ -35,36 +35,36 @@ export function hasRole(user: User | null, ...roles: string[]): boolean {
 
 const API_BASE = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
 
+// Extract initial token synchronously so it's available before any child effects run.
+// This prevents the race condition where CommandCenter's useEffect fires API calls
+// before the token is saved to localStorage.
+function getInitialToken(): string | null {
+  if (typeof window === "undefined") return null;
+
+  const params = new URLSearchParams(window.location.search);
+  const urlToken = params.get("token");
+
+  if (urlToken) {
+    localStorage.setItem("cg_token", urlToken);
+    // Clean the URL so token isn't visible / bookmarkable
+    window.history.replaceState({}, "", window.location.pathname);
+    return urlToken;
+  }
+
+  return localStorage.getItem("cg_token");
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
-  const [token, setToken] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [token, setToken] = useState<string | null>(getInitialToken);
+  // If there's no token at init, we already know there's no user — skip loading state
+  const [loading, setLoading] = useState(() => getInitialToken() !== null);
 
   const logout = useCallback(() => {
     localStorage.removeItem("cg_token");
     setToken(null);
     setUser(null);
     window.location.href = "/login";
-  }, []);
-
-  // On mount: check for token in URL (OAuth redirect) or localStorage
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const urlToken = params.get("token");
-
-    if (urlToken) {
-      localStorage.setItem("cg_token", urlToken);
-      setToken(urlToken);
-      // Clean the URL
-      window.history.replaceState({}, "", window.location.pathname);
-    } else {
-      const stored = localStorage.getItem("cg_token");
-      if (stored) {
-        setToken(stored);
-      } else {
-        setLoading(false);
-      }
-    }
   }, []);
 
   // When token changes, fetch user profile
