@@ -61,6 +61,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const logout = useCallback(() => {
     localStorage.removeItem("cg_token");
+    document.cookie = "cg_auth=; path=/; max-age=0";
     setToken(null);
     setUser(null);
     window.location.href = "/login";
@@ -105,8 +106,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (!res.ok) throw new Error("Unauthorized");
         const data = await res.json();
         setUser(data);
+        // Set indicator cookie so middleware can prevent SSR flash
+        document.cookie = "cg_auth=1; path=/; max-age=86400; SameSite=Lax";
       } catch {
         localStorage.removeItem("cg_token");
+        document.cookie = "cg_auth=; path=/; max-age=0";
         setToken(null);
         setUser(null);
       } finally {
