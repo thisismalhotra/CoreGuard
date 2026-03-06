@@ -51,7 +51,7 @@ type InspectionRow = { id: number; part: string | null; batch_size: number; resu
 type DemandRow = { id: number; part: string | null; forecast_qty: number; actual_qty: number; period: string | null };
 type LogEntry = { timestamp: string; agent: string; message: string; type: string };
 
-export function AnalyticsCharts() {
+export function AnalyticsCharts({ refreshKey }: { refreshKey?: number }) {
   const [orders, setOrders] = useState<PurchaseOrder[]>([]);
   const [inspections, setInspections] = useState<InspectionRow[]>([]);
   const [demand, setDemand] = useState<DemandRow[]>([]);
@@ -78,7 +78,7 @@ export function AnalyticsCharts() {
       }
     }
     fetchAll();
-  }, []);
+  }, [refreshKey]);
 
   if (loading) {
     const skeletonHeights = [45, 72, 58, 35, 80, 63];
