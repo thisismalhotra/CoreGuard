@@ -78,9 +78,9 @@ def init_sio(app_state):
 
 
 async def _emit_logs_task(sio, logs: list[dict[str, str]], delay: float) -> None:
-    """Background coroutine: streams logs to dashboards with pacing delay."""
+    """Background coroutine: streams logs to authenticated dashboard clients."""
     for log in logs:
-        await sio.emit("agent_log", log)
+        await sio.emit("agent_log", log, room="dashboard")
         await asyncio.sleep(delay)
 
 

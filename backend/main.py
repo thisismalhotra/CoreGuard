@@ -91,13 +91,21 @@ socket_app = socketio.ASGIApp(sio, other_asgi_app=app)
 
 @sio.event
 async def connect(sid: str, environ: dict, auth: Optional[dict] = None) -> bool:
-    """Validate JWT on Socket.io connection."""
+    """Validate JWT on Socket.io connection and join user-specific room."""
     if not auth or not auth.get("token"):
         logger.warning("Socket connection rejected: no auth token (sid=%s)", sid)
         return False
     try:
-        decode_token(auth["token"])
-        logger.info("Client connected: %s", sid)
+        payload = decode_token(auth["token"])
+        user_id = payload.get("user_id")
+        logger.info("Client connected: sid=%s user=%s", sid, user_id)
+
+        # Join user-specific room for targeted emissions (future use)
+        if user_id:
+            await sio.enter_room(sid, f"user_{user_id}")
+
+        # All authenticated users join the dashboard room for shared Glass Box logs
+        await sio.enter_room(sid, "dashboard")
         return True
     except Exception:
         logger.warning("Socket connection rejected: invalid token (sid=%s)", sid)
