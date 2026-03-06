@@ -50,6 +50,12 @@ app = FastAPI(
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
+# Trust reverse proxy headers (Render, Railway, etc.) so request.url_for()
+# generates https:// URLs for OAuth callbacks.
+if os.getenv("DATABASE_URL"):  # proxy exists in production
+    from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
+    app.add_middleware(ProxyHeadersMiddleware, trusted_hosts=["*"])
+
 app.add_middleware(SessionMiddleware, secret_key=os.getenv("JWT_SECRET", "dev-secret"))
 
 FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:3000")
