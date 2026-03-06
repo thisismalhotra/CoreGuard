@@ -19,6 +19,7 @@ from agents.utils import create_agent_log
 from database.models import (
     BOMEntry,
     CriticalityLevel,
+    Inventory,
     Part,
     RingFenceAuditLog,
 )
@@ -620,7 +621,9 @@ def ring_fence_inventory(
         return {"success": False, "part_id": part_id_str, "order_ref": order_ref,
                 "qty_requested": qty, "qty_ring_fenced": 0, "logs": logs}
 
-    inv = part.inventory
+    # Lock the inventory row to prevent concurrent over-allocation.
+    # with_for_update() is a no-op on SQLite but prevents race conditions on Postgres.
+    inv = db.query(Inventory).filter(Inventory.id == part.inventory.id).with_for_update().first()
     available_for_fencing = inv.available  # on_hand - reserved - ring_fenced_qty
 
     if available_for_fencing >= qty:

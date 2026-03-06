@@ -83,6 +83,7 @@ def evaluate_handshake_trigger(
 def monitor_part(
     db: Session,
     part_id_str: str,
+    burn_rate_override: float | None = None,
 ) -> dict[str, Any]:
     """
     PRD §9 Step 1-3: Baseline Monitoring + Local Validation.
@@ -126,16 +127,19 @@ def monitor_part(
             "crisis_signal": None, "logs": logs,
         }
 
+    # Use override if provided (avoids mutating the model during simulations)
+    effective_burn_rate = burn_rate_override if burn_rate_override is not None else inventory.daily_burn_rate
+
     logs.append(_log(
         db,
         f"Monitoring {part_id_str} ({part.description}): on_hand={inventory.on_hand}, "
-        f"burn_rate={inventory.daily_burn_rate}/day, safety_stock={inventory.safety_stock}.",
+        f"burn_rate={effective_burn_rate}/day, safety_stock={inventory.safety_stock}.",
     ))
 
     # --- Step 1: Calculate Dynamic Safety Stock (PRD §8) ---
     # For MVP, we estimate max/avg from the burn rate and supplier lead time
     supplier_lead_time = part.supplier.lead_time_days if part.supplier else 7
-    avg_daily_usage = inventory.daily_burn_rate
+    avg_daily_usage = effective_burn_rate
     # Max daily usage estimated as 1.5x average (spike scenario)
     max_daily_usage = avg_daily_usage * 1.5
     # Max lead time estimated as supplier lead + 3 days buffer
@@ -154,7 +158,7 @@ def monitor_part(
     ))
 
     # --- Step 2: Calculate Real-Time Runway (PRD §8) ---
-    runway = calculate_runway(inventory.on_hand, inventory.daily_burn_rate)
+    runway = calculate_runway(inventory.on_hand, effective_burn_rate)
 
     if runway == float("inf"):
         logs.append(_log(db, f"{part_id_str}: Zero burn rate — infinite runway (no consumption).", "info"))
@@ -163,13 +167,13 @@ def monitor_part(
         logs.append(_log(
             db,
             f"Runway for {part_id_str}: {runway:.1f} days "
-            f"(on_hand={inventory.on_hand} / burn_rate={inventory.daily_burn_rate}/day). "
+            f"(on_hand={inventory.on_hand} / burn_rate={effective_burn_rate}/day). "
             f"Supplier lead time: {supplier_lead_time} days.",
             runway_status,
         ))
 
     # --- Step 3: Evaluate Handshake Trigger (PRD §8) ---
-    safety_stock_days = inventory.safety_stock / max(inventory.daily_burn_rate, 0.01)
+    safety_stock_days = inventory.safety_stock / max(effective_burn_rate, 0.01)
     handshake = evaluate_handshake_trigger(runway, supplier_lead_time, safety_stock_days)
 
     crisis_signal = None
@@ -177,7 +181,7 @@ def monitor_part(
         crisis_signal = {
             "part_id": part_id_str,
             "on_hand": inventory.on_hand,
-            "burn_rate": inventory.daily_burn_rate,
+            "burn_rate": effective_burn_rate,
             "runway_days": round(runway, 1),
             "safety_stock": inventory.safety_stock,
             "supplier_lead_time_days": supplier_lead_time,
@@ -202,7 +206,7 @@ def monitor_part(
     return {
         "part_id": part_id_str,
         "on_hand": inventory.on_hand,
-        "daily_burn_rate": inventory.daily_burn_rate,
+        "daily_burn_rate": effective_burn_rate,
         "runway_days": round(runway, 2) if runway != float("inf") else None,
         "dynamic_safety_stock": dynamic_ss,
         "current_safety_stock": inventory.safety_stock,
@@ -265,30 +269,28 @@ def monitor_all_components(
         component = bom.component
         inv = component.inventory
 
+        # Calculate simulated burn rate without mutating the model.
+        # This avoids a race condition where db.flush() inside monitor_part
+        # would persist the inflated value, visible to concurrent readers.
+        simulated_burn: float | None = None
         if inv:
-            # Simulate increased burn rate from demand spike
             additional_daily = (demand_qty * bom.quantity_per) / 30.0  # Spread over ~30 days
             original_burn = inv.daily_burn_rate
-            inv.daily_burn_rate = original_burn + additional_daily
+            simulated_burn = original_burn + additional_daily
 
             logs.append(_log(
                 db,
                 f"Simulating demand impact on {component.part_id}: "
-                f"burn rate {original_burn:.1f} → {inv.daily_burn_rate:.1f}/day "
+                f"burn rate {original_burn:.1f} → {simulated_burn:.1f}/day "
                 f"(+{additional_daily:.1f} from {demand_qty}x{bom.quantity_per} demand).",
             ))
 
-        try:
-            report = monitor_part(db, component.part_id)
-            component_reports.append(report)
-            logs.extend(report["logs"])
+        report = monitor_part(db, component.part_id, burn_rate_override=simulated_burn)
+        component_reports.append(report)
+        logs.extend(report["logs"])
 
-            if report["handshake_triggered"] and report["crisis_signal"]:
-                crisis_signals.append(report["crisis_signal"])
-        finally:
-            # Restore original burn rate after check — even if monitor_part raises
-            if inv:
-                inv.daily_burn_rate = original_burn
+        if report["handshake_triggered"] and report["crisis_signal"]:
+            crisis_signals.append(report["crisis_signal"])
 
     if crisis_signals:
         logs.append(_log(
