@@ -130,7 +130,7 @@ export function CommandCenter() {
             Core-Guard <span className="text-blue-400">Command Center</span>
           </h1>
           <p className="text-sm text-muted-foreground">
-            Autonomous Supply Chain Operating System — FL-001
+            Autonomous Supply Chain Operating System
           </p>
         </div>
         <div className="flex items-center gap-4">
