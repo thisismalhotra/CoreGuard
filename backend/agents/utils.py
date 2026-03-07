@@ -11,6 +11,15 @@ from sqlalchemy.orm import Session
 from database.models import AgentLog
 
 
+def enum_val(e) -> str:
+    """Safely get string value from an enum or plain string.
+
+    PostgreSQL may return enum columns as plain strings instead of
+    Python enum members, so `.value` would fail.  This helper handles both.
+    """
+    return e.value if hasattr(e, "value") else str(e)
+
+
 def create_agent_log(
     db: Session,
     agent_name: str,

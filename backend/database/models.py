@@ -14,6 +14,11 @@ from sqlalchemy import Enum as SAEnum
 from sqlalchemy.orm import DeclarativeBase, relationship
 
 
+def _ev(e) -> str:
+    """Safe enum value extraction for __repr__ methods."""
+    return e.value if hasattr(e, "value") else str(e)
+
+
 class Base(DeclarativeBase):
     pass
 
@@ -136,7 +141,7 @@ class SupplierContract(Base):
         return (self.total_committed_qty or 0) - self.released_qty
 
     def __repr__(self) -> str:
-        return f"<Contract {self.contract_number}: {self.contract_type.value} [{self.status.value}]>"
+        return f"<Contract {self.contract_number}: {_ev(self.contract_type)} [{_ev(self.status)}]>"
 
 
 class ScheduledRelease(Base):
@@ -156,7 +161,7 @@ class ScheduledRelease(Base):
     part = relationship("Part")
 
     def __repr__(self) -> str:
-        return f"<Release {self.release_number}: {self.quantity}x [{self.status.value}]>"
+        return f"<Release {self.release_number}: {self.quantity}x [{_ev(self.status)}]>"
 
 
 class AlternateSupplier(Base):
@@ -271,7 +276,7 @@ class PurchaseOrder(Base):
     approver = relationship("User", foreign_keys=[approved_by])
 
     def __repr__(self) -> str:
-        return f"<PO {self.po_number}: {self.quantity}x @ ${self.total_cost} [{self.status.value}]>"
+        return f"<PO {self.po_number}: {self.quantity}x @ ${self.total_cost} [{_ev(self.status)}]>"
 
 
 class DemandForecast(Base):
@@ -309,7 +314,7 @@ class QualityInspection(Base):
     part = relationship("Part")
 
     def __repr__(self) -> str:
-        return f"<Inspection {self.part_id}: {self.result.value}>"
+        return f"<Inspection {self.part_id}: {_ev(self.result)}>"
 
 
 class SalesOrderStatus(str, enum.Enum):
@@ -333,7 +338,7 @@ class SalesOrder(Base):
     part = relationship("Part")
 
     def __repr__(self) -> str:
-        return f"<SalesOrder {self.order_number}: {self.quantity}x [{self.status.value}]>"
+        return f"<SalesOrder {self.order_number}: {self.quantity}x [{_ev(self.status)}]>"
 
 
 class RingFenceAuditLog(Base):
@@ -372,7 +377,7 @@ class InventoryHealthRecord(Base):
     notes = Column(Text, default="")
 
     def __repr__(self) -> str:
-        return f"<InventoryHealth {self.part_id}: {self.flag.value}>"
+        return f"<InventoryHealth {self.part_id}: {_ev(self.flag)}>"
 
 
 class AgentLog(Base):

@@ -5,6 +5,7 @@ Inventory & Supplier REST endpoints.
 from fastapi import APIRouter, Depends, Request
 from sqlalchemy.orm import Session
 
+from agents.utils import enum_val
 from auth import get_current_user
 from database.connection import get_db
 from database.models import Inventory, Part, Supplier, User
@@ -27,7 +28,7 @@ def get_inventory(request: Request, db: Session = Depends(get_db), current_user:
         {
             "part_id": part.part_id,
             "description": part.description,
-            "category": part.category.value,
+            "category": enum_val(part.category),
             "on_hand": inv.on_hand,
             "safety_stock": inv.safety_stock,
             "reserved": inv.reserved,

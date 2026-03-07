@@ -5,6 +5,7 @@ Agent metadata & DB viewer REST endpoints.
 from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy.orm import Session, joinedload
 
+from agents.utils import enum_val
 from auth import get_current_user
 from database.connection import get_db
 from database.models import (
@@ -235,8 +236,8 @@ def db_suppliers(
         {"id": s.id, "name": s.name, "contact_email": s.contact_email,
          "lead_time_days": s.lead_time_days, "reliability_score": s.reliability_score,
          "is_active": bool(s.is_active),
-         "tier": s.tier.value if s.tier else None,
-         "region": s.region.value if s.region else None,
+         "tier": enum_val(s.tier) if s.tier else None,
+         "region": enum_val(s.region) if s.region else None,
          "expedite_lead_time_days": s.expedite_lead_time_days,
          "minimum_order_qty": s.minimum_order_qty,
          "capacity_per_month": s.capacity_per_month,
@@ -258,8 +259,8 @@ def db_parts(
     rows = db.query(Part).options(joinedload(Part.supplier)).order_by(Part.id).offset(offset).limit(limit).all()
     return [
         {"id": p.id, "part_id": p.part_id, "description": p.description,
-         "category": p.category.value, "unit_cost": p.unit_cost,
-         "criticality": p.criticality.value, "lead_time_sensitivity": p.lead_time_sensitivity,
+         "category": enum_val(p.category), "unit_cost": p.unit_cost,
+         "criticality": enum_val(p.criticality), "lead_time_sensitivity": p.lead_time_sensitivity,
          "substitute_pool_size": p.substitute_pool_size,
          "supplier": p.supplier.name if p.supplier else None}
         for p in rows
@@ -324,7 +325,7 @@ def db_orders(
          "part": po.part.part_id if po.part else None,
          "supplier": po.supplier.name if po.supplier else None,
          "quantity": po.quantity, "unit_cost": po.unit_cost,
-         "total_cost": po.total_cost, "status": po.status.value,
+         "total_cost": po.total_cost, "status": enum_val(po.status),
          "triggered_by": po.triggered_by,
          "created_at": po.created_at.isoformat() if po.created_at else None}
         for po in rows
@@ -367,7 +368,7 @@ def db_quality_inspections(
     rows = db.query(QualityInspection).options(joinedload(QualityInspection.part)).order_by(QualityInspection.id).offset(offset).limit(limit).all()
     return [
         {"id": q.id, "part": q.part.part_id if q.part else None,
-         "batch_size": q.batch_size, "result": q.result.value,
+         "batch_size": q.batch_size, "result": enum_val(q.result),
          "notes": q.notes,
          "inspected_at": q.inspected_at.isoformat() if q.inspected_at else None}
         for q in rows
@@ -407,7 +408,7 @@ def db_sales_orders(
     return [
         {"id": so.id, "order_number": so.order_number,
          "part": so.part.part_id if so.part else None,
-         "quantity": so.quantity, "status": so.status.value,
+         "quantity": so.quantity, "status": enum_val(so.status),
          "priority": so.priority,
          "created_at": so.created_at.isoformat() if so.created_at else None}
         for so in rows
@@ -447,7 +448,7 @@ def db_inventory_health(
     """Raw inventory_health table dump."""
     rows = db.query(InventoryHealthRecord).order_by(InventoryHealthRecord.id.desc()).offset(offset).limit(limit).all()
     return [
-        {"id": h.id, "part_id": h.part_id, "flag": h.flag.value,
+        {"id": h.id, "part_id": h.part_id, "flag": enum_val(h.flag),
          "resolved": bool(h.resolved), "notes": h.notes,
          "detected_at": h.detected_at.isoformat() if h.detected_at else None}
         for h in rows
@@ -468,14 +469,14 @@ def db_supplier_contracts(
     return [
         {"id": c.id, "contract_number": c.contract_number,
          "supplier": c.supplier.name if c.supplier else None,
-         "contract_type": c.contract_type.value,
+         "contract_type": enum_val(c.contract_type),
          "start_date": c.start_date.isoformat() if c.start_date else None,
          "end_date": c.end_date.isoformat() if c.end_date else None,
          "total_committed_value": c.total_committed_value,
          "total_committed_qty": c.total_committed_qty,
          "released_value": c.released_value, "released_qty": c.released_qty,
          "remaining_value": c.remaining_value, "remaining_qty": c.remaining_qty,
-         "status": c.status.value}
+         "status": enum_val(c.status)}
         for c in rows
     ]
 
@@ -498,7 +499,7 @@ def db_scheduled_releases(
          "quantity": r.quantity,
          "requested_delivery_date": r.requested_delivery_date.isoformat() if r.requested_delivery_date else None,
          "actual_delivery_date": r.actual_delivery_date.isoformat() if r.actual_delivery_date else None,
-         "status": r.status.value}
+         "status": enum_val(r.status)}
         for r in rows
     ]
 

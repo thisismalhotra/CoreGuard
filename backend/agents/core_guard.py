@@ -16,6 +16,7 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from agents.utils import create_agent_log
+from agents.utils import enum_val as _ev
 from database.models import (
     BOMEntry,
     CriticalityLevel,
@@ -168,7 +169,7 @@ def calculate_net_requirements(
 
             logs.append(_log(
                 db,
-                f"BOM check: {component.part_id} [{component.criticality.value}] — "
+                f"BOM check: {component.part_id} [{_ev(component.criticality)}] — "
                 f"need {required}, available {available}, gap {gap}.",
             ))
 
@@ -180,7 +181,7 @@ def calculate_net_requirements(
             if order_qty > gap:
                 logs.append(_log(
                     db,
-                    f"Criticality [{component.criticality.value}]: Adding {routing['safety_stock_multiplier']}x buffer → "
+                    f"Criticality [{_ev(component.criticality)}]: Adding {routing['safety_stock_multiplier']}x buffer → "
                     f"ordering {order_qty} (gap was {gap}).",
                     "info",
                 ))
@@ -190,7 +191,7 @@ def calculate_net_requirements(
                 "required": required,
                 "available": available,
                 "gap": gap,
-                "criticality": component.criticality.value,
+                "criticality": _ev(component.criticality),
             })
 
             logs.append(_log(db, f"SHORTAGE: {component.part_id} short by {gap} units.", "warning"))
@@ -202,7 +203,7 @@ def calculate_net_requirements(
             else:
                 logs.append(_log(
                     db,
-                    f"Reallocation BLOCKED for {component.part_id} — criticality [{component.criticality.value}] "
+                    f"Reallocation BLOCKED for {component.part_id} — criticality [{_ev(component.criticality)}] "
                     f"forbids stock transfers. Must procure externally.",
                     "warning",
                 ))
@@ -222,7 +223,7 @@ def calculate_net_requirements(
                         "supplier_name": component.supplier.name if component.supplier else "Unknown",
                         "triggered_by": AGENT_NAME,
                         "expedite": routing["expedite"],
-                        "criticality": component.criticality.value,
+                        "criticality": _ev(component.criticality),
                     }
                     actions.append(buy_order)
                     logs.append(_log(
@@ -243,7 +244,7 @@ def calculate_net_requirements(
                     "supplier_name": component.supplier.name if component.supplier else "Unknown",
                     "triggered_by": AGENT_NAME,
                     "expedite": routing["expedite"],
-                    "criticality": component.criticality.value,
+                    "criticality": _ev(component.criticality),
                 }
                 actions.append(buy_order)
                 logs.append(_log(
@@ -269,7 +270,7 @@ def calculate_net_requirements(
 
             logs.append(_log(
                 db,
-                f"BOM check: {component.part_id} [{component.criticality.value}] — "
+                f"BOM check: {component.part_id} [{_ev(component.criticality)}] — "
                 f"need {required}, available {available}, gap {gap}.",
             ))
 
@@ -282,7 +283,7 @@ def calculate_net_requirements(
             if order_qty > gap:
                 logs.append(_log(
                     db,
-                    f"Criticality [{component.criticality.value}]: Adding {routing['safety_stock_multiplier']}x buffer → "
+                    f"Criticality [{_ev(component.criticality)}]: Adding {routing['safety_stock_multiplier']}x buffer → "
                     f"ordering {order_qty} (gap was {gap}).",
                     "info",
                 ))
@@ -292,7 +293,7 @@ def calculate_net_requirements(
                 "required": required,
                 "available": available,
                 "gap": gap,
-                "criticality": component.criticality.value,
+                "criticality": _ev(component.criticality),
             })
 
             logs.append(_log(db, f"SHORTAGE: {component.part_id} short by {gap} units.", "warning"))
@@ -304,7 +305,7 @@ def calculate_net_requirements(
             else:
                 logs.append(_log(
                     db,
-                    f"Reallocation BLOCKED for {component.part_id} — criticality [{component.criticality.value}] "
+                    f"Reallocation BLOCKED for {component.part_id} — criticality [{_ev(component.criticality)}] "
                     f"forbids stock transfers. Must procure externally.",
                     "warning",
                 ))
@@ -325,7 +326,7 @@ def calculate_net_requirements(
                         "supplier_name": component.supplier.name if component.supplier else "Unknown",
                         "triggered_by": AGENT_NAME,
                         "expedite": routing["expedite"],
-                        "criticality": component.criticality.value,
+                        "criticality": _ev(component.criticality),
                     }
                     actions.append(buy_order)
                     logs.append(_log(
@@ -347,7 +348,7 @@ def calculate_net_requirements(
                     "supplier_name": component.supplier.name if component.supplier else "Unknown",
                     "triggered_by": AGENT_NAME,
                     "expedite": routing["expedite"],
-                    "criticality": component.criticality.value,
+                    "criticality": _ev(component.criticality),
                 }
                 actions.append(buy_order)
                 logs.append(_log(

@@ -21,6 +21,7 @@ from agents.dispatcher import triage_demand_spike
 from agents.eagle_eye import inspect_batch
 from agents.ghost_writer import process_buy_orders
 from agents.part_agent import monitor_all_components, monitor_part
+from agents.utils import enum_val
 from auth import require_role
 from database.connection import engine, get_db
 from database.models import (
@@ -1281,7 +1282,7 @@ async def simulate_multi_sku_contention(
         prioritization.append({
             "sku": "FL-001-T",
             "description": fl001t.description,
-            "criticality": fl001t.criticality.value,
+            "criticality": enum_val(fl001t.criticality),
             "priority": 1,
             "demand": tactical_demand,
             "chassis_needed": tactical_demand * 1,
@@ -1290,7 +1291,7 @@ async def simulate_multi_sku_contention(
         prioritization.append({
             "sku": "FL-001-S",
             "description": fl001s.description,
-            "criticality": fl001s.criticality.value,
+            "criticality": enum_val(fl001s.criticality),
             "priority": 2,
             "demand": standard_demand,
             "chassis_needed": standard_demand * 1,
@@ -1630,7 +1631,7 @@ async def simulate_tariff_shock(
                     if alt_cost < tariffed_cost:
                         log = _sys_log(
                             db,
-                            f"SWITCH RECOMMENDED: {p.part_id} to {alt_supplier.name} ({alt_supplier.region.value}) — "
+                            f"SWITCH RECOMMENDED: {p.part_id} to {alt_supplier.name} ({enum_val(alt_supplier.region)}) — "
                             f"${alt_cost:.2f} vs tariffed ${tariffed_cost:.2f}. "
                             f"Savings: ${tariffed_cost - alt_cost:.2f}/unit.",
                             "success",
@@ -2081,7 +2082,7 @@ async def simulate_semiconductor_allocation(
                     product_mix.append({
                         "sku": fg.part_id,
                         "description": fg.description,
-                        "criticality": fg.criticality.value,
+                        "criticality": enum_val(fg.criticality),
                         "qty_per": bom.quantity_per * pb.quantity_per,
                     })
         else:
@@ -2090,7 +2091,7 @@ async def simulate_semiconductor_allocation(
                 product_mix.append({
                     "sku": parent.part_id,
                     "description": parent.description,
-                    "criticality": parent.criticality.value,
+                    "criticality": enum_val(parent.criticality),
                     "qty_per": bom.quantity_per,
                 })
 

@@ -11,6 +11,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session, joinedload
 
+from agents.utils import enum_val
 from auth import get_current_user
 from database.connection import get_db
 from database.models import (
@@ -91,7 +92,7 @@ def _build_context(db: Session) -> str:
             supplier = po.supplier.name if po.supplier else "?"
             po_lines.append(
                 f"- {po.po_number}: {po.quantity}x {part_id} from {supplier}, "
-                f"${po.total_cost:,.2f}, status={po.status.value}, triggered_by={po.triggered_by}"
+                f"${po.total_cost:,.2f}, status={enum_val(po.status)}, triggered_by={po.triggered_by}"
             )
         sections.append("\n".join(po_lines))
 
@@ -101,8 +102,8 @@ def _build_context(db: Session) -> str:
         sup_lines = ["## Suppliers"]
         for s in suppliers:
             sup_lines.append(
-                f"- {s.name}: tier={s.tier.value if hasattr(s.tier, 'value') else s.tier}, "
-                f"region={s.region.value if hasattr(s.region, 'value') else s.region}, "
+                f"- {s.name}: tier={enum_val(s.tier)}, "
+                f"region={enum_val(s.region)}, "
                 f"lead_time={s.lead_time_days}d, reliability={s.reliability_pct}%"
             )
         sections.append("\n".join(sup_lines))

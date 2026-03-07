@@ -12,6 +12,7 @@ from starlette.concurrency import run_in_threadpool
 from starlette.responses import StreamingResponse
 
 from agents.ghost_writer import generate_po_pdf_bytes
+from agents.utils import enum_val
 from auth import get_current_user, require_role
 from database.connection import get_db
 from database.models import AgentLog, OrderStatus, Part, PurchaseOrder, Supplier, User
@@ -42,7 +43,7 @@ def get_orders(request: Request, db: Session = Depends(get_db), current_user: Us
             "quantity": po.quantity,
             "unit_cost": po.unit_cost,
             "total_cost": po.total_cost,
-            "status": po.status.value,
+            "status": enum_val(po.status),
             "created_at": po.created_at.isoformat(),
             "triggered_by": po.triggered_by,
             "approved_by_name": po.approver.name if po.approver else None,
@@ -137,7 +138,7 @@ def download_order_pdf(
         "quantity": po.quantity,
         "unit_cost": po.unit_cost,
         "total_cost": po.total_cost,
-        "status": po.status.value,
+        "status": enum_val(po.status),
     }
     pdf_bytes = generate_po_pdf_bytes(po_dict)
 
@@ -174,7 +175,7 @@ async def update_order_status(
         if po.status != OrderStatus.PENDING_APPROVAL:
             raise HTTPException(
                 status_code=400,
-                detail=f"Cannot update PO '{po_number}': current status is '{po.status.value}', "
+                detail=f"Cannot update PO '{po_number}': current status is '{enum_val(po.status)}', "
                        f"only PENDING_APPROVAL orders can be approved or rejected.",
             )
 
@@ -208,7 +209,7 @@ async def update_order_status(
             "quantity": po.quantity,
             "unit_cost": po.unit_cost,
             "total_cost": po.total_cost,
-            "status": po.status.value,
+            "status": enum_val(po.status),
             "created_at": po.created_at.isoformat(),
             "triggered_by": po.triggered_by,
             "approved_by_name": current_user.name,

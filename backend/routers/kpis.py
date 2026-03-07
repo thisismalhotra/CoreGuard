@@ -7,6 +7,7 @@ from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Depends, Request
 from sqlalchemy.orm import Session
 
+from agents.utils import enum_val
 from auth import get_current_user
 from database.connection import get_db
 from database.models import AgentLog, Inventory, PurchaseOrder, User
@@ -30,7 +31,7 @@ def get_kpis(request: Request, db: Session = Depends(get_db), current_user: User
     total_safety = sum(i.safety_stock for i in total_inventory)
 
     orders = db.query(PurchaseOrder).all()
-    auto_approved = sum(1 for o in orders if o.status.value == "APPROVED")
+    auto_approved = sum(1 for o in orders if enum_val(o.status) == "APPROVED")
     total_orders = len(orders)
 
     # Count distinct agents active in the last 5 minutes (not all-time)

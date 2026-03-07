@@ -18,6 +18,7 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from agents.utils import create_agent_log
+from agents.utils import enum_val as _ev
 from database.models import (
     BOMEntry,
     CriticalityLevel,
@@ -112,7 +113,7 @@ def triage_demand_spike(
         scored_components.append({
             "part_id": component.part_id,
             "description": component.description,
-            "criticality": component.criticality.value,
+            "criticality": _ev(component.criticality),
             "lead_time_sensitivity": component.lead_time_sensitivity,
             "required": required,
             "available": available,
