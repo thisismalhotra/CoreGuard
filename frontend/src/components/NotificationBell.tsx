@@ -35,6 +35,7 @@ export function NotificationBell({ onNavigateToOrders }: { onNavigateToOrders: (
   }, []);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- initial fetch on mount
     fetchNotifications();
     const socket = getSocket();
     const handlePending = () => fetchNotifications();

@@ -11,6 +11,7 @@ export function useCSSColor(varName: string, fallback = "#888"): string {
   const [color, setColor] = useState(fallback);
   useEffect(() => {
     const raw = getComputedStyle(document.documentElement).getPropertyValue(varName).trim();
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- syncing CSS custom property to state
     if (raw) setColor(raw.startsWith("oklch") || raw.startsWith("#") || raw.startsWith("rgb") ? raw : `hsl(${raw})`);
   }, [varName]);
   // Re-resolve on theme change (class mutation on <html>)

@@ -8,7 +8,6 @@ from sqlalchemy.orm import Session, joinedload
 from auth import get_current_user
 from database.connection import get_db
 from database.models import (
-    User,
     AgentLog,
     AlternateSupplier,
     BOMEntry,
@@ -23,6 +22,7 @@ from database.models import (
     ScheduledRelease,
     Supplier,
     SupplierContract,
+    User,
 )
 from rate_limit import limiter
 from schemas import (
