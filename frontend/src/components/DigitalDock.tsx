@@ -15,6 +15,7 @@ import {
   AlertTriangle,
   ChevronDown,
   ChevronUp,
+  UserCheck,
 } from "lucide-react";
 import { toast } from "sonner";
 import { api, type PurchaseOrder, type QualityInspection } from "@/lib/api";
@@ -84,10 +85,16 @@ export function DigitalDock() {
     poNumber: string,
     status: "APPROVED" | "CANCELLED"
   ) => {
+    let rejectionReason: string | undefined;
+    if (status === "CANCELLED") {
+      const reason = window.prompt("Reason for rejection (optional):");
+      if (reason === null) return; // User cancelled the prompt
+      rejectionReason = reason || undefined;
+    }
     setUpdatingPO(poNumber);
     setPOError(null);
     try {
-      await api.updateOrderStatus(poNumber, status);
+      await api.updateOrderStatus(poNumber, status, rejectionReason);
       await fetchData();
       toast.success(`PO ${poNumber} ${status === "APPROVED" ? "approved" : "rejected"}`);
     } catch (err) {
@@ -594,6 +601,26 @@ export function DigitalDock() {
                             </p>
                           </div>
                         </div>
+                        {/* Audit trail */}
+                        {po.approved_by_name && (
+                          <div className="mt-3 pt-3 border-t border-border/50">
+                            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                              <UserCheck className="h-3.5 w-3.5" />
+                              <span>
+                                {po.status === "CANCELLED" ? "Rejected" : "Approved"} by{" "}
+                                <span className="text-foreground font-medium">{po.approved_by_name}</span>
+                                {po.approved_at && (
+                                  <> on {new Date(po.approved_at).toLocaleString()}</>
+                                )}
+                              </span>
+                            </div>
+                            {po.rejection_reason && (
+                              <p className="text-xs text-red-400 mt-1 ml-5">
+                                Reason: {po.rejection_reason}
+                              </p>
+                            )}
+                          </div>
+                        )}
                       </div>
                     )}
                   </div>

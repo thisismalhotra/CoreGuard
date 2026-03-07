@@ -59,6 +59,10 @@ export type PurchaseOrder = {
   status: string;
   created_at: string;
   triggered_by: string;
+  approved_by_name: string | null;
+  approved_by_email: string | null;
+  approved_at: string | null;
+  rejection_reason: string | null;
 };
 
 export type KPIs = {
@@ -196,11 +200,11 @@ export const api = {
       `/api/simulate/demand-horizon?part_id=${partId}&demand_qty=${demandQty}&days_until_needed=${daysUntilNeeded}`,
       { method: "POST" }
     ),
-  updateOrderStatus: (poNumber: string, status: "APPROVED" | "CANCELLED") =>
+  updateOrderStatus: (poNumber: string, status: "APPROVED" | "CANCELLED", rejectionReason?: string) =>
     fetchJSON<PurchaseOrder>(`/api/orders/${poNumber}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ status }),
+      body: JSON.stringify({ status, ...(rejectionReason && { rejection_reason: rejectionReason }) }),
     }),
   downloadPOPdf: (poNumber: string) =>
     downloadBlob(`/api/orders/${poNumber}/pdf`, `${poNumber}.pdf`),
