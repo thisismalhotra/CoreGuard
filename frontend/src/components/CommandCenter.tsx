@@ -18,6 +18,7 @@ import { AnalyticsCharts } from "./AnalyticsCharts";
 import { ThemeToggle } from "./ThemeToggle";
 import { OnboardingModal } from "./OnboardingModal";
 import { UserManagement } from "./UserManagement";
+import { NotificationBell } from "./NotificationBell";
 import { useAuth, hasRole } from "@/lib/auth";
 
 export function CommandCenter() {
@@ -185,6 +186,9 @@ export function CommandCenter() {
             </Button>
           </Link>
           <ThemeToggle />
+          {hasRole(user, "approver", "admin") && (
+            <NotificationBell onNavigateToOrders={() => setActiveTab("dock")} />
+          )}
           {user && (
             <div className="flex items-center gap-2">
               {user.picture && (

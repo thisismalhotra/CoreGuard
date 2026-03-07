@@ -98,6 +98,15 @@ export type QualityInspection = {
   inspected_at: string | null;
 };
 
+export type PendingApproval = {
+  po_number: string;
+  part_id: string;
+  supplier: string;
+  total_cost: number;
+  created_at: string;
+  triggered_by: string;
+};
+
 export type UserProfile = {
   id: number;
   email: string;
@@ -226,6 +235,8 @@ export const api = {
     fetchJSON<{ delay: number }>("/api/settings/log-delay"),
   setLogDelay: (delay: number) =>
     fetchJSON<{ delay: number }>(`/api/settings/log-delay?delay=${delay}`, { method: "POST" }),
+  // Notifications
+  getPendingApprovals: () => fetchJSON<PendingApproval[]>("/api/notifications/pending-approvals"),
   // Admin: user management
   getUsers: () => fetchJSON<UserProfile[]>("/api/admin/users"),
   updateUserRole: (userId: number, role: string) =>
