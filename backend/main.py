@@ -48,7 +48,12 @@ logger = logging.getLogger(__name__)
 # --- Socket.io setup ---
 sio = socketio.AsyncServer(
     async_mode="asgi",
-    cors_allowed_origins=[os.getenv("FRONTEND_URL", "http://localhost:3000"), "http://127.0.0.1:3000"],
+    cors_allowed_origins=[
+        os.getenv("FRONTEND_URL", "http://localhost:3000"),
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+        "https://coreguard-frontend.onrender.com",
+    ],
 )
 
 
@@ -91,9 +96,19 @@ app.add_middleware(SessionMiddleware, secret_key=os.getenv("JWT_SECRET", "dev-se
 
 FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:3000")
 
+# Build allowed origins: always include localhost + explicit production URL
+_allowed_origins = [
+    FRONTEND_URL,
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+    "https://coreguard-frontend.onrender.com",
+]
+# Deduplicate while preserving order
+_allowed_origins = list(dict.fromkeys(_allowed_origins))
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[FRONTEND_URL, "http://127.0.0.1:3000"],
+    allow_origins=_allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
