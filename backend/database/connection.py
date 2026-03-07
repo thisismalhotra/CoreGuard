@@ -17,6 +17,10 @@ from .models import Base
 DATABASE_URL = os.getenv("DATABASE_URL")
 
 if DATABASE_URL:
+    # Supabase/Render may provide postgres:// which SQLAlchemy 2.0 rejects;
+    # normalise to postgresql://.
+    if DATABASE_URL.startswith("postgres://"):
+        DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
     engine = create_engine(DATABASE_URL, echo=False, pool_pre_ping=True)
 else:
     DB_PATH = Path(__file__).resolve().parent.parent / "coreguard.db"

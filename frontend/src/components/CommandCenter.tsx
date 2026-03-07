@@ -70,7 +70,8 @@ export function CommandCenter() {
       });
     } catch (err) {
       console.error("Failed to refresh data:", err);
-      setBackendError("Backend unreachable. Is the server running on port 8000?");
+      const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
+      setBackendError(`Backend unreachable at ${backendUrl}. Check that NEXT_PUBLIC_BACKEND_URL is set correctly.`);
     }
   }, []);
 
