@@ -262,9 +262,13 @@ class PurchaseOrder(Base):
     status = Column(SAEnum(OrderStatus), nullable=False, default=OrderStatus.DRAFT)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     triggered_by = Column(String(50), default="SYSTEM")  # Which agent created this
+    approved_by = Column(Integer, ForeignKey("users.id"), nullable=True)
+    approved_at = Column(DateTime, nullable=True)
+    rejection_reason = Column(Text, nullable=True)
 
     part = relationship("Part")
     supplier = relationship("Supplier")
+    approver = relationship("User", foreign_keys=[approved_by])
 
     def __repr__(self) -> str:
         return f"<PO {self.po_number}: {self.quantity}x @ ${self.total_cost} [{self.status.value}]>"

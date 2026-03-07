@@ -55,6 +55,10 @@ class PurchaseOrderResponse(BaseModel):
     status: str
     created_at: str
     triggered_by: str
+    approved_by_name: Optional[str] = None
+    approved_by_email: Optional[str] = None
+    approved_at: Optional[str] = None
+    rejection_reason: Optional[str] = None
 
 
 class CreatePurchaseOrderRequest(BaseModel):
@@ -70,6 +74,11 @@ class UpdateOrderStatusRequest(BaseModel):
     status: str = Field(
         description="New status: 'APPROVED' or 'CANCELLED'",
         pattern="^(APPROVED|CANCELLED)$",
+    )
+    rejection_reason: Optional[str] = Field(
+        default=None,
+        description="Reason for rejection (only when status is CANCELLED)",
+        max_length=500,
     )
 
 

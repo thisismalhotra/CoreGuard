@@ -30,7 +30,7 @@ def get_orders(request: Request, db: Session = Depends(get_db), current_user: Us
     """Return all purchase orders."""
     orders = (
         db.query(PurchaseOrder)
-        .options(joinedload(PurchaseOrder.part), joinedload(PurchaseOrder.supplier))
+        .options(joinedload(PurchaseOrder.part), joinedload(PurchaseOrder.supplier), joinedload(PurchaseOrder.approver))
         .order_by(PurchaseOrder.created_at.desc())
         .all()
     )
@@ -45,6 +45,10 @@ def get_orders(request: Request, db: Session = Depends(get_db), current_user: Us
             "status": po.status.value,
             "created_at": po.created_at.isoformat(),
             "triggered_by": po.triggered_by,
+            "approved_by_name": po.approver.name if po.approver else None,
+            "approved_by_email": po.approver.email if po.approver else None,
+            "approved_at": po.approved_at.isoformat() if po.approved_at else None,
+            "rejection_reason": po.rejection_reason,
         }
         for po in orders
     ]
@@ -176,12 +180,16 @@ async def update_order_status(
 
         new_status = OrderStatus(body.status)
         po.status = new_status
+        po.approved_by = current_user.id
+        po.approved_at = datetime.now(timezone.utc)
+        if body.rejection_reason and new_status == OrderStatus.CANCELLED:
+            po.rejection_reason = body.rejection_reason
 
         # --- Glass Box: Persist log to DB ---
         action_word = "APPROVED" if new_status == OrderStatus.APPROVED else "REJECTED"
         log_type = "success" if new_status == OrderStatus.APPROVED else "warning"
         log_msg = (
-            f"PO {po_number} {action_word} by human operator — "
+            f"PO {po_number} {action_word} by {current_user.name} — "
             f"{po.quantity}x {po.part.part_id} from {po.supplier.name} "
             f"(${po.total_cost:,.2f})"
         )
@@ -203,6 +211,10 @@ async def update_order_status(
             "status": po.status.value,
             "created_at": po.created_at.isoformat(),
             "triggered_by": po.triggered_by,
+            "approved_by_name": current_user.name,
+            "approved_by_email": current_user.email,
+            "approved_at": po.approved_at.isoformat() if po.approved_at else None,
+            "rejection_reason": po.rejection_reason,
             "_log_payload": {
                 "timestamp": log_entry.timestamp.isoformat() if log_entry.timestamp else datetime.now(timezone.utc).isoformat(),
                 "agent": "Buyer",
