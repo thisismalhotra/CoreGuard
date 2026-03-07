@@ -7,6 +7,9 @@ All endpoint logic lives in the `routers/` package.
 Run: uvicorn main:socket_app --reload --host 0.0.0.0 --port 8000
 """
 
+from dotenv import load_dotenv
+load_dotenv()
+
 import logging
 import os
 import sys

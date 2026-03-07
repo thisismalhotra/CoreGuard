@@ -17,6 +17,7 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { DollarSign, ShieldCheck, TrendingUp, Users } from "lucide-react";
 import { api, type PurchaseOrder } from "@/lib/api";
+import { useCSSColor } from "@/lib/utils";
 
 const TOOLTIP_STYLE: React.CSSProperties = {
   backgroundColor: "hsl(var(--card))",
@@ -51,7 +52,9 @@ type InspectionRow = { id: number; part: string | null; batch_size: number; resu
 type DemandRow = { id: number; part: string | null; forecast_qty: number; actual_qty: number; period: string | null };
 type LogEntry = { timestamp: string; agent: string; message: string; type: string };
 
-export function AnalyticsCharts({ refreshKey }: { refreshKey?: number }) {
+export function AnalyticsCharts({ refreshKey = 0 }: { refreshKey?: number }) {
+  const axisColor = useCSSColor("--muted-foreground");
+  const gridColor = useCSSColor("--border");
   const [orders, setOrders] = useState<PurchaseOrder[]>([]);
   const [inspections, setInspections] = useState<InspectionRow[]>([]);
   const [demand, setDemand] = useState<DemandRow[]>([]);
@@ -60,6 +63,7 @@ export function AnalyticsCharts({ refreshKey }: { refreshKey?: number }) {
 
   useEffect(() => {
     async function fetchAll() {
+      setLoading(true);
       try {
         const [ord, insp, dem, lg] = await Promise.all([
           api.getOrders(),
@@ -207,9 +211,9 @@ export function AnalyticsCharts({ refreshKey }: { refreshKey?: number }) {
             <CardContent>
               <ResponsiveContainer width="100%" height={250}>
                 <BarChart data={spendData} layout="vertical" margin={{ top: 5, right: 30, left: 80, bottom: 5 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                  <XAxis type="number" tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 12 }} />
-                  <YAxis dataKey="name" type="category" tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 11 }} width={75} />
+                  <CartesianGrid strokeDasharray="3 3" stroke={gridColor} />
+                  <XAxis type="number" tick={{ fill: axisColor, fontSize: 12 }} />
+                  <YAxis dataKey="name" type="category" tick={{ fill: axisColor, fontSize: 11 }} width={75} />
                   <Tooltip contentStyle={TOOLTIP_STYLE} formatter={(value) => `$${Number(value).toLocaleString()}`} />
                   <Bar dataKey="Spend" fill="#f59e0b" radius={[0, 4, 4, 0]} />
                 </BarChart>
@@ -264,9 +268,9 @@ export function AnalyticsCharts({ refreshKey }: { refreshKey?: number }) {
             <CardContent>
               <ResponsiveContainer width="100%" height={250}>
                 <BarChart data={demandData} margin={{ top: 10, right: 30, left: 0, bottom: 5 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                  <XAxis dataKey="name" tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 11 }} />
-                  <YAxis tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 12 }} />
+                  <CartesianGrid strokeDasharray="3 3" stroke={gridColor} />
+                  <XAxis dataKey="name" tick={{ fill: axisColor, fontSize: 11 }} />
+                  <YAxis tick={{ fill: axisColor, fontSize: 12 }} />
                   <Tooltip contentStyle={TOOLTIP_STYLE} />
                   <Legend />
                   <Bar dataKey="Forecast" fill="#8b5cf6" radius={[4, 4, 0, 0]} />
@@ -290,9 +294,9 @@ export function AnalyticsCharts({ refreshKey }: { refreshKey?: number }) {
           <CardContent>
             <ResponsiveContainer width="100%" height={300}>
               <BarChart data={agentData} margin={{ top: 10, right: 30, left: 0, bottom: 5 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                <XAxis dataKey="name" tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 11 }} />
-                <YAxis tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 12 }} />
+                <CartesianGrid strokeDasharray="3 3" stroke={gridColor} />
+                <XAxis dataKey="name" tick={{ fill: axisColor, fontSize: 11 }} />
+                <YAxis tick={{ fill: axisColor, fontSize: 12 }} />
                 <Tooltip contentStyle={TOOLTIP_STYLE} />
                 <Legend />
                 {logTypes.map((type) => (
