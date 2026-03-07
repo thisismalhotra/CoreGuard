@@ -33,8 +33,10 @@ from slowapi.errors import RateLimitExceeded
 from starlette.middleware.sessions import SessionMiddleware
 
 from auth import decode_token
-from database.connection import init_db
+from database.connection import SessionLocal, init_db
+from database.models import Supplier
 from rate_limit import limiter
+from seed import _do_seed
 from routers import admin as admin_router, agents_meta, auth as auth_router, inventory, kpis, orders, simulations
 from routers.data_integrity import router as data_integrity_router
 
@@ -50,6 +52,19 @@ sio = socketio.AsyncServer(
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
+    # Auto-seed if database is empty (first deploy)
+    db = SessionLocal()
+    try:
+        if not db.query(Supplier).first():
+            logger.info("Empty database detected — auto-seeding FL-001 dataset")
+            _do_seed(db)
+            db.commit()
+            logger.info("Auto-seed complete")
+    except Exception:
+        db.rollback()
+        logger.exception("Auto-seed failed")
+    finally:
+        db.close()
     yield
 
 
