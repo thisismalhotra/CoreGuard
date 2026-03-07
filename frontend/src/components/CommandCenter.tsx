@@ -20,6 +20,7 @@ import { OnboardingModal } from "./OnboardingModal";
 import { UserManagement } from "./UserManagement";
 import { NotificationBell } from "./NotificationBell";
 import { CSVUploadDialog } from "./CSVUploadDialog";
+import { AIChat } from "./AIChat";
 import { useAuth, hasRole } from "@/lib/auth";
 
 export function CommandCenter() {
@@ -298,6 +299,10 @@ export function CommandCenter() {
                 God Mode
               </TabsTrigger>
             )}
+            <TabsTrigger value="chat" className="data-[state=active]:bg-muted gap-1.5">
+              <Bot className="h-3.5 w-3.5" />
+              AI Chat
+            </TabsTrigger>
             {hasRole(user, "admin") && (
               <TabsTrigger value="users" className="data-[state=active]:bg-muted gap-1.5">
                 <Users className="h-3.5 w-3.5" />
@@ -361,6 +366,9 @@ export function CommandCenter() {
             />
           </TabsContent>
         )}
+        <TabsContent value="chat" className="mt-4">
+          <AIChat />
+        </TabsContent>
         {hasRole(user, "admin") && (
           <TabsContent value="users" className="mt-4">
             <UserManagement />

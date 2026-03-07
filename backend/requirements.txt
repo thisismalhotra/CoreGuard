@@ -10,7 +10,10 @@ sqlalchemy==2.0.36
 alembic==1.14.1
 psycopg2-binary==2.9.10
 
-# AI / LLM (uncomment when LangChain integration is implemented)
+# AI / LLM
+anthropic>=0.42.0
+
+# LangChain (uncomment when LangChain integration is implemented)
 # langchain==0.3.14
 # langchain-openai==0.3.0
 # openai==1.58.1

@@ -274,4 +274,11 @@ export const api = {
     }
     return res.json();
   },
+  // AI Chat
+  chat: (message: string) =>
+    fetchJSON<{ response: string; model: string }>("/api/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message }),
+    }),
 };
