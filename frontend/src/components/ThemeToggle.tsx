@@ -2,12 +2,11 @@
 
 import { useTheme } from "next-themes";
 import { useEffect, useState, useRef } from "react";
-import { Sun, Moon, Crosshair } from "lucide-react";
+import { Sun, Moon } from "lucide-react";
 
 const THEMES = [
   { value: "light", label: "Light", icon: Sun },
   { value: "dark", label: "Dark", icon: Moon },
-  { value: "warcom", label: "WARCOM", icon: Crosshair },
 ] as const;
 
 export function ThemeToggle() {

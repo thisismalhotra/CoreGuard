@@ -17,6 +17,7 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { BarChart3, PieChart } from "lucide-react";
 import type { InventoryItem } from "@/lib/api";
+import { useCSSColor } from "@/lib/utils";
 
 type Props = {
   items: InventoryItem[];
@@ -55,6 +56,8 @@ function healthColor(score: number): string {
 }
 
 export function InventoryCharts({ items, loading }: Props) {
+  const axisColor = useCSSColor("--muted-foreground");
+  const gridColor = useCSSColor("--border");
   if (loading) {
     return (
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -82,7 +85,7 @@ export function InventoryCharts({ items, loading }: Props) {
 
   // --- Bar chart data: stock levels per component ---
   const barData = items
-    .filter((i) => i.category === "Common Core")
+    .filter((i) => i.category === "Component")
     .map((item) => ({
       name: item.part_id,
       "On Hand": item.on_hand,
@@ -94,7 +97,7 @@ export function InventoryCharts({ items, loading }: Props) {
 
   // --- Radial chart: per-part health score ---
   const healthData = items
-    .filter((i) => i.category === "Common Core")
+    .filter((i) => i.category === "Component")
     .map((item) => {
       const score = healthScore(item);
       return {
@@ -132,12 +135,12 @@ export function InventoryCharts({ items, loading }: Props) {
         <CardContent>
           <ResponsiveContainer width="100%" height={300}>
             <BarChart data={barData} margin={{ top: 10, right: 30, left: 0, bottom: 5 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+              <CartesianGrid strokeDasharray="3 3" stroke={gridColor} />
               <XAxis
                 dataKey="name"
-                tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 12 }}
+                tick={{ fill: axisColor, fontSize: 12 }}
               />
-              <YAxis tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 12 }} />
+              <YAxis tick={{ fill: axisColor, fontSize: 12 }} />
               <Tooltip contentStyle={TOOLTIP_STYLE} />
               <Legend />
               <Bar dataKey="On Hand" fill={COLORS.on_hand} radius={[4, 4, 0, 0]} />
@@ -213,19 +216,19 @@ export function InventoryCharts({ items, loading }: Props) {
           <CardContent>
             <ResponsiveContainer width="100%" height={250}>
               <BarChart data={burnData} margin={{ top: 10, right: 30, left: 0, bottom: 5 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                <CartesianGrid strokeDasharray="3 3" stroke={gridColor} />
                 <XAxis
                   dataKey="name"
-                  tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 12 }}
+                  tick={{ fill: axisColor, fontSize: 12 }}
                 />
                 <YAxis
                   yAxisId="left"
-                  tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 12 }}
+                  tick={{ fill: axisColor, fontSize: 12 }}
                 />
                 <YAxis
                   yAxisId="right"
                   orientation="right"
-                  tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 12 }}
+                  tick={{ fill: axisColor, fontSize: 12 }}
                 />
                 <Tooltip contentStyle={TOOLTIP_STYLE} />
                 <Legend />
