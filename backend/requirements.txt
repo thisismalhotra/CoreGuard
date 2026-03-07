@@ -21,6 +21,9 @@ psycopg2-binary==2.9.10
 # PDF generation
 fpdf2==2.8.2
 
+# File uploads
+python-multipart==0.0.20
+
 # Utilities
 python-dotenv==1.0.1
 pydantic==2.10.4

@@ -37,7 +37,7 @@ from database.connection import SessionLocal, init_db
 from database.models import Supplier
 from rate_limit import limiter
 from seed import _do_seed
-from routers import admin as admin_router, agents_meta, auth as auth_router, inventory, kpis, orders, simulations
+from routers import admin as admin_router, agents_meta, auth as auth_router, data_upload, inventory, kpis, orders, simulations
 from routers.data_integrity import router as data_integrity_router
 
 logger = logging.getLogger(__name__)
@@ -111,6 +111,7 @@ app.include_router(kpis.router)
 app.include_router(agents_meta.router)
 app.include_router(simulations.router)
 app.include_router(data_integrity_router)
+app.include_router(data_upload.router)
 
 # --- Store Socket.io and settings on app.state for thread-safe access ---
 app.state.sio = sio

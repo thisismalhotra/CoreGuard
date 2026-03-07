@@ -19,6 +19,7 @@ import { ThemeToggle } from "./ThemeToggle";
 import { OnboardingModal } from "./OnboardingModal";
 import { UserManagement } from "./UserManagement";
 import { NotificationBell } from "./NotificationBell";
+import { CSVUploadDialog } from "./CSVUploadDialog";
 import { useAuth, hasRole } from "@/lib/auth";
 
 export function CommandCenter() {
@@ -185,6 +186,9 @@ export function CommandCenter() {
               Guide
             </Button>
           </Link>
+          {hasRole(user, "operator", "approver", "admin") && (
+            <CSVUploadDialog />
+          )}
           <ThemeToggle />
           {hasRole(user, "approver", "admin") && (
             <NotificationBell onNavigateToOrders={() => setActiveTab("dock")} />

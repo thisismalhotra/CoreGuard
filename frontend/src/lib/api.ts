@@ -251,4 +251,27 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ is_active }),
     }),
+  // CSV Upload
+  uploadDemandForecast: async (file: File) => {
+    const token = typeof window !== "undefined" ? localStorage.getItem("cg_token") : null;
+    const formData = new FormData();
+    formData.append("file", file);
+    const headers: Record<string, string> = {};
+    if (token) headers["Authorization"] = `Bearer ${token}`;
+    const res = await fetch(`${API_BASE}/api/upload/demand-forecast`, {
+      method: "POST",
+      headers,
+      body: formData,
+    });
+    if (res.status === 401 && typeof window !== "undefined") {
+      localStorage.removeItem("cg_token");
+      window.location.href = "/login";
+      throw new Error("Unauthorized");
+    }
+    if (!res.ok) {
+      const data = await res.json().catch(() => null);
+      throw new Error(data?.detail || `Upload failed: ${res.status}`);
+    }
+    return res.json();
+  },
 };
