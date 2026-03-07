@@ -232,3 +232,31 @@ async def update_order_status(
         await sio.emit("agent_log", log_payload)
 
     return result
+
+
+@router.get("/notifications/pending-approvals")
+@limiter.limit("60/minute")
+def get_pending_approvals(
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role("approver", "admin")),
+) -> list[dict]:
+    """Return POs needing approval (notifications for approvers/admins)."""
+    pending = (
+        db.query(PurchaseOrder)
+        .options(joinedload(PurchaseOrder.part), joinedload(PurchaseOrder.supplier))
+        .filter(PurchaseOrder.status == OrderStatus.PENDING_APPROVAL)
+        .order_by(PurchaseOrder.created_at.desc())
+        .all()
+    )
+    return [
+        {
+            "po_number": po.po_number,
+            "part_id": po.part.part_id,
+            "supplier": po.supplier.name,
+            "total_cost": po.total_cost,
+            "created_at": po.created_at.isoformat(),
+            "triggered_by": po.triggered_by,
+        }
+        for po in pending
+    ]
