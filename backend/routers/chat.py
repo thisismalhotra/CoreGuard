@@ -6,7 +6,6 @@ Gracefully degrades to 503 if ANTHROPIC_API_KEY is not set.
 """
 
 import os
-from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
@@ -19,7 +18,6 @@ from database.models import (
     DemandForecast,
     Inventory,
     OrderStatus,
-    Part,
     PurchaseOrder,
     QualityInspection,
     Supplier,

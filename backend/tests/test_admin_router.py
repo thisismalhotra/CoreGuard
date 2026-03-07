@@ -1,6 +1,7 @@
 """Tests for the admin router — user management."""
 
 import os
+
 os.environ.setdefault("JWT_SECRET", "test-secret-key-for-tests")
 os.environ.setdefault("FRONTEND_URL", "http://localhost:3000")
 
@@ -9,9 +10,9 @@ from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from database.models import Base, User
-from database.connection import get_db
 from auth import create_token
+from database.connection import get_db
+from database.models import Base, User
 from main import app
 
 

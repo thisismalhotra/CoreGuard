@@ -7,5 +7,7 @@ select = ["E", "F", "I"]
 ignore = ["E501"]
 
 [tool.ruff.lint.per-file-ignores]
-"tests/*" = ["F811"]
+"tests/*" = ["F811", "E402"]
 "seed.py" = ["E402"]
+"main.py" = ["E402"]
+"alembic/*" = ["F401", "I001"]

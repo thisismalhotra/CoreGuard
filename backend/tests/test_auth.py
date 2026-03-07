@@ -1,18 +1,17 @@
 """Tests for JWT helpers and auth dependencies."""
 
-import time
+
+# Patch env before importing auth module
+import os
+from unittest.mock import MagicMock
 
 import pytest
-from unittest.mock import MagicMock
 from fastapi import HTTPException
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from database.models import Base, User
 
-
-# Patch env before importing auth module
-import os
 os.environ.setdefault("JWT_SECRET", "test-secret-key-for-tests")
 
 from auth import create_token, decode_token, get_current_user, require_role

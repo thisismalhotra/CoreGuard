@@ -12,7 +12,6 @@ Validates that the 6 identified gaps have been resolved:
 
 from database.models import (
     BOMEntry,
-    DemandForecast,
     Inventory,
     Part,
     PartCategory,

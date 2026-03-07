@@ -6,7 +6,6 @@ logs to connected dashboards via Socket.io.
 """
 
 import asyncio
-import os
 import threading
 from datetime import datetime, timedelta, timezone
 from typing import Any, Union
@@ -14,7 +13,6 @@ from typing import Any, Union
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.orm import Session
 
-from auth import require_role
 from agents.aura import detect_demand_spike
 from agents.core_guard import calculate_blast_radius, calculate_net_requirements, ring_fence_inventory
 from agents.data_integrity import run_full_integrity_check
@@ -23,6 +21,7 @@ from agents.dispatcher import triage_demand_spike
 from agents.eagle_eye import inspect_batch
 from agents.ghost_writer import process_buy_orders
 from agents.part_agent import monitor_all_components, monitor_part
+from auth import require_role
 from database.connection import engine, get_db
 from database.models import (
     AgentLog,
@@ -1929,6 +1928,7 @@ async def simulate_military_surge(
 
     # Identify displaced orders (other open orders competing for same parts)
     displaced_orders: list[dict[str, Any]] = []
+    mil_bom_entries = db.query(BOMEntry).filter(BOMEntry.parent_id == part.id).all()
     other_orders = (
         db.query(SalesOrder)
         .filter(
@@ -1943,7 +1943,7 @@ async def simulate_military_surge(
         if order_part:
             # Check if this order uses any of the same components
             order_bom = db.query(BOMEntry).filter(BOMEntry.parent_id == order_part.id).all()
-            shared = [b.component.part_id for b in order_bom for rb in bom_entries
+            shared = [b.component.part_id for b in order_bom for rb in mil_bom_entries
                       if b.component_id == rb.component_id]
             if shared:
                 displaced_orders.append({

@@ -1,6 +1,5 @@
 """Tests for the User model."""
 
-from datetime import datetime, timezone
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
