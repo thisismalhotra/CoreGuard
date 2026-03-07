@@ -271,7 +271,7 @@ export function CommandCenter() {
             variant="outline"
             size="sm"
             className="ml-auto border-red-700/50 text-red-300 hover:bg-red-950 text-xs"
-            onClick={refreshData}
+            onClick={() => refreshData()}
           >
             Retry
           </Button>
