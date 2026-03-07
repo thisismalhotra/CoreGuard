@@ -46,32 +46,41 @@ export function CommandCenter() {
     issue: string; detail: string; action: string;
   }>>([]);
 
-  const refreshData = useCallback(async () => {
-    try {
-      const [inv, kpiData, logData] = await Promise.all([
-        api.getInventory(),
-        api.getKPIs(),
-        api.getLogs(),
-      ]);
-      setBackendError(null);
-      setInventory(inv);
-      setKPIs(kpiData);
-      api.getDataIntegrityWarnings().then(setIntegrityWarnings).catch(() => {});
-      // Merge persisted logs with live ones (deduplicate via timestamp+agent+message composite key)
-      setLogs((prev) => {
-        const existingKeys = new Set(
-          prev.map((l) => `${l.timestamp}|${l.agent}|${l.message}`)
-        );
-        const newLogs = logData.filter(
-          (l) => !existingKeys.has(`${l.timestamp}|${l.agent}|${l.message}`)
-        ) as AgentLog[];
-        // Cap at 1000 entries to prevent unbounded memory growth
-        return [...newLogs, ...prev].slice(0, 1000);
-      });
-    } catch (err) {
-      console.error("Failed to refresh data:", err);
-      const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
-      setBackendError(`Backend unreachable at ${backendUrl}. Check that NEXT_PUBLIC_BACKEND_URL is set correctly.`);
+  const refreshData = useCallback(async (retries = 5) => {
+    const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
+    for (let attempt = 0; attempt <= retries; attempt++) {
+      try {
+        const [inv, kpiData, logData] = await Promise.all([
+          api.getInventory(),
+          api.getKPIs(),
+          api.getLogs(),
+        ]);
+        setBackendError(null);
+        setInventory(inv);
+        setKPIs(kpiData);
+        api.getDataIntegrityWarnings().then(setIntegrityWarnings).catch(() => {});
+        // Merge persisted logs with live ones (deduplicate via timestamp+agent+message composite key)
+        setLogs((prev) => {
+          const existingKeys = new Set(
+            prev.map((l) => `${l.timestamp}|${l.agent}|${l.message}`)
+          );
+          const newLogs = logData.filter(
+            (l) => !existingKeys.has(`${l.timestamp}|${l.agent}|${l.message}`)
+          ) as AgentLog[];
+          // Cap at 1000 entries to prevent unbounded memory growth
+          return [...newLogs, ...prev].slice(0, 1000);
+        });
+        return; // success — exit retry loop
+      } catch (err) {
+        console.error(`Failed to refresh data (attempt ${attempt + 1}/${retries + 1}):`, err);
+        if (attempt < retries) {
+          // Render free tier spins down after inactivity; backend needs time to wake up
+          setBackendError(`Backend is waking up… retrying (${attempt + 1}/${retries})`);
+          await new Promise((r) => setTimeout(r, 3000 * Math.pow(1.5, attempt)));
+        } else {
+          setBackendError(`Backend unreachable at ${backendUrl}. Check that NEXT_PUBLIC_BACKEND_URL is set correctly.`);
+        }
+      }
     }
   }, []);
 

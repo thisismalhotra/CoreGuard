@@ -27,8 +27,9 @@ logging.basicConfig(
     datefmt="%Y-%m-%d %H:%M:%S",
     stream=sys.stdout,
 )
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from starlette.middleware.sessions import SessionMiddleware
@@ -88,7 +89,8 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 # Trust reverse proxy headers (Render, Railway, etc.) so request.url_for()
 # generates https:// URLs for OAuth callbacks.
-if os.getenv("DATABASE_URL"):  # proxy exists in production
+# Detect production by RENDER env var (set automatically) or DATABASE_URL.
+if os.getenv("RENDER") or os.getenv("DATABASE_URL"):
     from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
     app.add_middleware(ProxyHeadersMiddleware, trusted_hosts=["*"])
 
@@ -114,10 +116,43 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
+# --- Global exception handler ---
+# Starlette's ServerErrorMiddleware catches unhandled exceptions BEFORE
+# CORSMiddleware can add headers, so the browser blocks the 500 response.
+# This handler ensures CORS headers are always present on error responses.
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    logger.exception("Unhandled exception on %s %s", request.method, request.url.path)
+    origin = request.headers.get("origin", "")
+    headers = {}
+    if origin in _allowed_origins:
+        headers["access-control-allow-origin"] = origin
+        headers["access-control-allow-credentials"] = "true"
+    return JSONResponse(
+        status_code=500,
+        content={"detail": f"{type(exc).__name__}: {exc}"},
+        headers=headers,
+    )
+
+
 # --- Health check (for Render / load balancer probes) ---
 @app.get("/health", tags=["system"])
 async def health():
-    return {"status": "ok"}
+    """Health check with DB connectivity test."""
+    db_ok = False
+    db_error = None
+    try:
+        db = SessionLocal()
+        db.execute(__import__("sqlalchemy").text("SELECT 1"))
+        db.close()
+        db_ok = True
+    except Exception as e:
+        db_error = str(e)
+    return {
+        "status": "ok" if db_ok else "degraded",
+        "database": "connected" if db_ok else f"error: {db_error}",
+    }
 
 
 # --- Register routers ---
