@@ -5,7 +5,7 @@ Admin router: user management endpoints (Admin role only).
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from auth import get_current_user, require_role
+from auth import require_role
 from database.connection import get_db
 from database.models import User
 from schemas import UpdateUserActiveRequest, UpdateUserRoleRequest, UserResponse

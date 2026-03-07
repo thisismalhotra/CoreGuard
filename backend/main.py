@@ -8,6 +8,7 @@ Run: uvicorn main:socket_app --reload --host 0.0.0.0 --port 8000
 """
 
 from dotenv import load_dotenv
+
 load_dotenv()
 
 import logging
@@ -36,9 +37,11 @@ from auth import decode_token
 from database.connection import SessionLocal, init_db
 from database.models import Supplier
 from rate_limit import limiter
-from seed import _do_seed
-from routers import admin as admin_router, agents_meta, auth as auth_router, chat, data_upload, inventory, kpis, orders, simulations
+from routers import admin as admin_router
+from routers import agents_meta, chat, data_upload, inventory, kpis, orders, simulations
+from routers import auth as auth_router
 from routers.data_integrity import router as data_integrity_router
+from seed import _do_seed
 
 logger = logging.getLogger(__name__)
 

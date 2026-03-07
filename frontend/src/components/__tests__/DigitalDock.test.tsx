@@ -91,6 +91,8 @@ describe("DigitalDock", () => {
       ...mockOrders[0],
       status: "APPROVED",
     });
+    // Mock window.prompt for rejection reason dialog
+    vi.stubGlobal("prompt", vi.fn().mockReturnValue("test reason"));
   });
 
   it("renders quality inspections with PASS/FAIL badges after loading", async () => {
@@ -180,7 +182,8 @@ describe("DigitalDock", () => {
     await waitFor(() => {
       expect(mockedUpdateOrderStatus).toHaveBeenCalledWith(
         "PO-001",
-        "APPROVED"
+        "APPROVED",
+        undefined
       );
     });
 
@@ -207,13 +210,14 @@ describe("DigitalDock", () => {
       name: /^Reject$/,
     });
 
-    // Click Reject
+    // Click Reject — window.prompt is mocked to return "test reason"
     await user.click(rejectButton);
 
     await waitFor(() => {
       expect(mockedUpdateOrderStatus).toHaveBeenCalledWith(
         "PO-001",
-        "CANCELLED"
+        "CANCELLED",
+        "test reason"
       );
     });
 
